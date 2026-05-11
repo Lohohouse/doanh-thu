@@ -1,0 +1,41 @@
+name: Update Loho Dashboard
+
+on:
+  schedule:
+    # 9:30 sáng VN = 02:30 UTC
+    - cron: '30 2 * * *'
+    # 15:30 chiều VN = 08:30 UTC
+    - cron: '30 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run update_dashboard.py
+        run: |
+          python update_dashboard.py index.html
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            VN_TIME=$(TZ='Asia/Ho_Chi_Minh' date '+%d/%m/%Y %H:%M')
+            git commit -m "Auto-update dashboard $VN_TIME"
+            git push
+            echo "Pushed update at $VN_TIME (Asia/Ho_Chi_Minh)"
+          fi
