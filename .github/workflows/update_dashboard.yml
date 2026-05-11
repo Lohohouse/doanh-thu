@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      TZ: 'Asia/Ho_Chi_Minh'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
