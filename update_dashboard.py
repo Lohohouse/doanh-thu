@@ -24,6 +24,11 @@ except ImportError:
 FILE_ID = "1jwPEzRMcoYBJywZkW4Vn8dKe_w5hU-zVq51zSoXGY0M"
 BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&gid="
 
+# Google Sheet để nhập tay data báo cáo tuần
+WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
+WEEKLY_SHEET_GID = "0"
+WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
+
 SHEETS = {
     "shopee":      {"gid": "1202417447", "type": "processed"},
     "tiktok":      {"gid": "1316938731", "type": "processed"},
@@ -73,6 +78,307 @@ CATEGORIES = {
         "sku_prefix": ["tt-", "tt_", "l-tt-", "l-tt_"]
     },
 }
+
+
+def _norm_label(s):
+    """Normalize Vietnamese label for matching: lowercase, strip, collapse spaces, remove diacritics."""
+    if not s: return ""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    s = s.lower().strip()
+    # Vietnamese đ / Đ are separate characters — NFD does not decompose them
+    s = s.replace("đ", "d").replace("Đ", "d")
+    # Remove punctuation that may vary
+    s = s.replace(":", "").replace("(", "").replace(")", "").replace("%", "").replace(",", "")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _parse_weekly_csv(csv_text):
+    """Parse the weekly report Google Sheet CSV into the JSON structure used by the dashboard.
+
+    Sheet uses friendly Vietnamese labels in column A. Each section has its own column meaning:
+        ① Doanh thu quyết toán: B=Shopee, C=Tiktok, D=Lazada, E=Website
+        ② QC tuần: B=Shopee tuần trước, C=Shopee tuần này, D=Tiktok tuần trước, E=Tiktok tuần này
+        ③ QC tháng Shopee: B=Tháng này, C=Cùng kỳ, D=Tháng sau
+        ④ QC tháng Tiktok: B=Tháng này, C=Cùng kỳ, D=Tháng sau
+        ⑤ Chăm sóc KH: B=Shopee, C=Tiktok, D=Lazada, E=Zalo OA
+        ⑥ Đánh giá: B=Shopee, C=Tiktok, D=Lazada
+        ⑦ Khiếu nại: B=Shopee, C=Tiktok, D=Lazada, E=Website
+        ⑧ Tỷ lệ KN: B=Shopee, C=Tiktok, D=Lazada, E=Website
+
+    Parser tracks current section based on header rows containing ①/②/③/...
+    """
+    def num(v):
+        if v is None: return 0
+        v = str(v).strip()
+        if not v or v in ("—", "-", "/", "N/A"): return 0
+        v = v.replace(",", "").replace(" ", "").replace("đ", "").replace("%", "")
+        try: return float(v)
+        except: return 0
+
+    def num_or_none(v):
+        if v is None: return None
+        v = str(v).strip()
+        if not v or v in ("—", "-", "/", "N/A"): return None
+        v = v.replace(",", "").replace(" ", "").replace("đ", "").replace("%", "")
+        try: return float(v)
+        except: return None
+
+    def s(v):
+        return (str(v) if v is not None else "").strip()
+
+    # Parse all rows
+    raw_rows = list(csv.reader(io.StringIO(csv_text)))
+
+    # Section tracker
+    section = ""
+    rows_by_section = {}  # section -> list of (label_norm, original_label, [B,C,D,E])
+
+    for r in raw_rows:
+        if not r or all(not c.strip() for c in r):
+            continue
+        col_a = (r[0] or "").strip()
+        # Pad to 6 cols
+        r = (r + [""] * 6)[:6]
+        cols_bcde = [r[1], r[2], r[3], r[4]]
+
+        # Detect section header
+        if any(col_a.startswith(prefix) for prefix in ["①","②","③","④","⑤","⑥","⑦","⑧","⑨"]):
+            # Map number to section key
+            section_map = {
+                "①": "settlement", "②": "ads_weekly",
+                "③": "ads_monthly_shopee", "④": "ads_monthly_tiktok",
+                "⑤": "customer_care", "⑥": "reviews",
+                "⑦": "complaints", "⑧": "complaint_ratio",
+                "⑨": "extra",
+            }
+            section = section_map.get(col_a[0], "")
+            rows_by_section.setdefault(section, [])
+            continue
+        # Detect THONG TIN TUAN section
+        if "THONG TIN TUAN" in _norm_label(col_a).upper() or "thong tin tuan" in _norm_label(col_a):
+            section = "meta"
+            rows_by_section.setdefault(section, [])
+            continue
+        # Skip title/instruction rows
+        if not col_a or col_a.startswith("📋") or col_a.startswith("📅") or col_a.startswith("📝") or col_a.startswith("BÁO CÁO"):
+            continue
+        # Skip column-header subhead rows (when label is generic)
+        norm_label = _norm_label(col_a)
+        if norm_label in ("chi tieu", "muc", "key", "name", "label"):
+            continue
+
+        if section:
+            rows_by_section.setdefault(section, []).append((norm_label, col_a, cols_bcde))
+
+    def get_row(sec, *label_patterns):
+        """Find row in section whose normalized label matches any pattern (substring match)."""
+        for norm_label, orig_label, cols in rows_by_section.get(sec, []):
+            for p in label_patterns:
+                if _norm_label(p) in norm_label:
+                    return cols
+        return ["", "", "", ""]
+
+    # === META ===
+    label = s(get_row("meta", "ten tuan")[0]) or "Tuần hiện tại"
+    code = s(get_row("meta", "ma tuan")[0]) or "2026-W00"
+
+    # === SETTLEMENT ===
+    set_row = get_row("settlement", "doanh thu quyet toan", "quyet toan")
+    settlement = {
+        "shopee_settled":  num(set_row[0]),
+        "tiktok_settled":  num(set_row[1]),
+        "lazada_settled":  num(set_row[2]),
+        "website_settled": num(set_row[3]),
+    }
+
+    # === ADS WEEKLY === B=Shopee prev, C=Shopee cur, D=Tiktok prev, E=Tiktok cur
+    cost_r = get_row("ads_weekly", "chi phi quang cao", "chi phi qc")
+    rev_r  = get_row("ads_weekly", "doanh so tu quang cao", "doanh so qc", "doanh so tu qc")
+    ord_r  = get_row("ads_weekly", "so don hang tu qc", "so don hang", "don hang tu qc")
+    sp_r   = get_row("ads_weekly", "so san pham ban tu qc", "san pham ban", "so sp ban")
+    ads_weekly = {
+        "shopee": {
+            "prev_cost":     num_or_none(cost_r[0]),
+            "cost":          num_or_none(cost_r[1]),
+            "prev_revenue":  num_or_none(rev_r[0]),
+            "revenue":       num_or_none(rev_r[1]),
+            "prev_orders":   num_or_none(ord_r[0]),
+            "orders":        num_or_none(ord_r[1]),
+            "prev_products": num_or_none(sp_r[0]),
+            "products":      num_or_none(sp_r[1]),
+        },
+        "tiktok": {
+            "prev_cost":     num_or_none(cost_r[2]),
+            "cost":          num_or_none(cost_r[3]),
+            "prev_revenue":  num_or_none(rev_r[2]),
+            "revenue":       num_or_none(rev_r[3]),
+            "prev_orders":   num_or_none(ord_r[2]),
+            "orders":        num_or_none(ord_r[3]),
+            "prev_products": num_or_none(sp_r[2]),
+            "products":      num_or_none(sp_r[3]),
+        },
+    }
+
+    # === ADS MONTHLY === Sections 3 (shopee) and 4 (tiktok) — B=Tháng này, C=Cùng kỳ, D=Tháng sau
+    def parse_monthly(sec):
+        cp = get_row(sec, "chi phi qc thang", "chi phi qc", "chi phi quang cao")
+        ds = get_row(sec, "doanh so qc thang", "doanh so qc", "doanh so quang cao")
+        dh = get_row(sec, "so don hang thang", "don hang thang", "so don hang")
+        sp = get_row(sec, "so sp ban thang", "sp ban thang", "san pham ban")
+        td = get_row(sec, "tong doanh thu ban hang", "tong doanh thu")
+        return {
+            "t_current_label":     "Tháng này",
+            "t_prev_year_label":   "Cùng kỳ",
+            "t_next_label":        "Tháng sau",
+            "t_current_cost":      num_or_none(cp[0]),
+            "t_prev_year_cost":    num_or_none(cp[1]),
+            "t_next_cost":         num_or_none(cp[2]),
+            "t_current_revenue":   num_or_none(ds[0]),
+            "t_prev_year_revenue": num_or_none(ds[1]),
+            "t_next_revenue":      num_or_none(ds[2]),
+            "t_current_orders":    num_or_none(dh[0]),
+            "t_prev_year_orders":  num_or_none(dh[1]),
+            "t_next_orders":       num_or_none(dh[2]),
+            "t_current_products":  num_or_none(sp[0]),
+            "t_prev_year_products":num_or_none(sp[1]),
+            "t_next_products":     num_or_none(sp[2]),
+            "t_current_total_rev": num_or_none(td[0]),
+            "t_next_total_rev":    num_or_none(td[2]),
+        }
+    ads_monthly_sh = parse_monthly("ads_monthly_shopee")
+    ads_monthly_tk = parse_monthly("ads_monthly_tiktok")
+    ads_monthly = {"shopee": ads_monthly_sh, "tiktok": ads_monthly_tk}
+
+    # === TONG_DT === (Pulled from monthly sections row "Tổng doanh thu bán hàng")
+    ads_total_revenue = {
+        "shopee_t4": ads_monthly_sh.get("t_current_total_rev") or 0,
+        "shopee_t5": ads_monthly_sh.get("t_next_total_rev") or 0,
+        "tiktok_t4": ads_monthly_tk.get("t_current_total_rev") or 0,
+        "tiktok_t5": ads_monthly_tk.get("t_next_total_rev") or 0,
+    }
+
+    # === CUSTOMER CARE === B=Shopee, C=Tiktok, D=Lazada, E=Zalo OA
+    chat_r = get_row("customer_care", "luot chat")
+    conv_r = get_row("customer_care", "ty le chuyen doi")
+    rev_r2 = get_row("customer_care", "doanh so tu chat", "doanh so")
+    care_channels = ["Shopee", "Tiktok", "Lazada", "Zalo OA - Zalo shop"]
+    customer_care = []
+    for i, ch in enumerate(care_channels):
+        customer_care.append({
+            "channel": ch,
+            "chats": num_or_none(chat_r[i]),
+            "conversion": num_or_none(conv_r[i]),
+            "revenue": num_or_none(rev_r2[i]),
+        })
+
+    # === REVIEWS === B=Shopee, C=Tiktok, D=Lazada
+    r5 = get_row("reviews", "rate 5 sao")
+    r3 = get_row("reviews", "rate 3 sao")
+    r1 = get_row("reviews", "rate 1 sao")
+    review_channels = ["Shopee", "Tiktok", "Lazada"]
+    reviews = []
+    for i, ch in enumerate(review_channels):
+        # Reason and status are per-channel labeled rows
+        reason_row = get_row("reviews", f"ly do rate thap - {ch.lower()}", f"ly do {ch.lower()}")
+        status_row = get_row("reviews", f"tinh trang xu ly - {ch.lower()}", f"tinh trang {ch.lower()}")
+        reason = s(reason_row[0]).replace(";", "\n")
+        status = s(status_row[0])
+        reviews.append({
+            "channel": ch,
+            "rate5": num_or_none(r5[i]),
+            "rate3": num_or_none(r3[i]),
+            "rate1": num_or_none(r1[i]),
+            "reason": reason,
+            "status": status,
+        })
+
+    # === COMPLAINTS === B=Shopee, C=Tiktok, D=Lazada, E=Website
+    tm = get_row("complaints", "tong kn trong thang", "tong khieu nai", "tong thang")
+    tw = get_row("complaints", "kn trong tuan", "khieu nai trong tuan", "trong tuan")
+    dr = get_row("complaints", "da xu ly")
+    de = get_row("complaints", "dang xu ly")
+    complaint_channels = ["Shopee", "Tiktok", "Lazada", "Website"]
+    complaints = []
+    for i, ch in enumerate(complaint_channels):
+        reason_row = get_row("complaints", f"ly do khieu nai - {ch.lower()}", f"ly do {ch.lower()}")
+        reason = s(reason_row[0]).replace(";", "\n")
+        complaints.append({
+            "channel": ch,
+            "total_month": num_or_none(tm[i]),
+            "this_week": num_or_none(tw[i]),
+            "resolved": num_or_none(dr[i]),
+            "pending": num_or_none(de[i]),
+            "reason": reason,
+        })
+
+    # === COMPLAINT RATIO === B=Shopee, C=Tiktok, D=Lazada, E=Website
+    sk = get_row("complaint_ratio", "so khieu nai")
+    td = get_row("complaint_ratio", "tong don hang", "tong don")
+    complaint_ratio = {
+        "shopee":  {"complaints": num_or_none(sk[0]), "total_orders": num_or_none(td[0])},
+        "tiktok":  {"complaints": num_or_none(sk[1]), "total_orders": num_or_none(td[1])},
+        "lazada":  {"complaints": num_or_none(sk[2]), "total_orders": num_or_none(td[2])},
+        "website": {"complaints": num_or_none(sk[3]), "total_orders": num_or_none(td[3])},
+    }
+
+    return {
+        "current_week": code,
+        "weeks": {
+            code: {
+                "label": label,
+                "settlement": settlement,
+                "ads_weekly": ads_weekly,
+                "ads_monthly": ads_monthly,
+                "ads_total_revenue": ads_total_revenue,
+                "customer_care": customer_care,
+                "reviews": reviews,
+                "complaints": complaints,
+                "complaint_ratio": complaint_ratio,
+            }
+        }
+    }
+
+
+def load_weekly_report_data():
+    """Load manual weekly report data — try Google Sheet first, then local JSON fallback."""
+    # Try Google Sheet
+    try:
+        print(f"  → Fetching from Google Sheet (id={WEEKLY_SHEET_ID})...")
+        result = subprocess.run(
+            ["curl", "-sL", "-A", "Mozilla/5.0", WEEKLY_SHEET_URL],
+            capture_output=True, text=True, timeout=30
+        )
+        csv_text = result.stdout
+        if csv_text and len(csv_text) > 50 and ("Doanh thu quyết toán" in csv_text or "quyet toan" in csv_text.lower() or "①" in csv_text):
+            data = _parse_weekly_csv(csv_text)
+            print(f"  ✅ Loaded from Google Sheet — Tuần: {list(data['weeks'].values())[0]['label']}")
+            return data
+        else:
+            print(f"  ⚠️ Google Sheet trống hoặc thiếu cấu trúc — fallback sang JSON local")
+    except Exception as e:
+        print(f"  ⚠️ Lỗi fetch Google Sheet: {e} — fallback sang JSON local")
+
+    # Fallback: local JSON
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        "weekly_report_data.json",
+        os.path.join(script_dir, "weekly_report_data.json"),
+        os.path.join(os.getcwd(), "weekly_report_data.json"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    print(f"  → Loaded weekly report data from local: {path}")
+                    return json.load(f)
+            except Exception as e:
+                print(f"  ⚠️ Error loading {path}: {e}")
+                continue
+    print("  ⚠️ Không tìm thấy data — Tab Báo Cáo Tuần sẽ trống")
+    return {"current_week": "", "weeks": {}}
 
 
 def download_csv(name, gid):
@@ -670,13 +976,14 @@ def get_available_months(data):
     return sorted(months, key=lambda x: int(x[1:]))
 
 
-def generate_html(data_json, daily_json, products_json, output_path):
+def generate_html(data_json, daily_json, products_json, output_path, weekly_data=None):
     today = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M") if VN_TZ else datetime.now().strftime("%d/%m/%Y %H:%M")
     months = get_available_months(data_json)
     last_month = months[-1] if months else "T1"
     data_str = json.dumps(data_json, ensure_ascii=False)
     daily_str = json.dumps(daily_json, ensure_ascii=False)
     products_str = json.dumps(products_json, ensure_ascii=False)
+    weekly_str = json.dumps(weekly_data or {"current_week": "", "weeks": {}}, ensure_ascii=False)
     trend_labels = json.dumps(months)
     # Find latest date with data for default
     all_dates = set()
@@ -699,77 +1006,120 @@ def generate_html(data_json, daily_json, products_json, output_path):
     <title>Dashboard 營收報表 Báo Cáo Doanh Thu LOHO House 2026</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <style>
+        :root {{
+            --bg-page: #F5EFE6;
+            --bg-card: #FFFCF7;
+            --bg-soft: #FAF6EE;
+            --bg-section: #F9F3E8;
+            --primary: #8B6F47;
+            --primary-dark: #6B5236;
+            --primary-light: #B89970;
+            --accent: #C9A961;
+            --accent-dark: #A6864B;
+            --text-dark: #3D2E1F;
+            --text-mid: #6B5236;
+            --text-soft: #9B8975;
+            --border: #E8DFD3;
+            --border-soft: #F0E7DA;
+            --header-grad-start: #3D2E1F;
+            --header-grad-end: #6B5236;
+            --shadow-sm: 0 2px 8px rgba(61,46,31,0.06);
+            --shadow-md: 0 4px 16px rgba(61,46,31,0.08);
+            --shadow-lg: 0 8px 24px rgba(61,46,31,0.10);
+            --green-up: #6B8E5A;
+            --green-up-bg: #E6EFDD;
+            --red-down: #B5573D;
+            --red-down-bg: #F5E1D6;
+        }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; color: #333; }}
-        .header {{ background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; padding: 30px 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
-        .header h1 {{ font-size: 2.5em; margin-bottom: 8px; }}
-        .header p {{ font-size: 1.1em; opacity: 0.9; }}
-        .controls {{ background: white; padding: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,0.05); border-bottom: 1px solid #eee; }}
-        .month-btn {{ padding: 10px 20px; border: 2px solid #ddd; background: white; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.3s ease; }}
-        .month-btn:hover {{ border-color: #e74c3c; color: #e74c3c; }}
-        .month-btn.active {{ background: #e74c3c; color: white; border-color: #e74c3c; }}
-        .tabs {{ display: flex; background: white; border-bottom: 2px solid #eee; padding: 0 20px; gap: 0; }}
-        .tab-btn {{ padding: 15px 25px; background: none; border: none; cursor: pointer; font-weight: 600; color: #666; border-bottom: 3px solid transparent; transition: all 0.3s ease; }}
-        .tab-btn:hover {{ color: #e74c3c; }}
-        .tab-btn.active {{ color: #e74c3c; border-bottom-color: #e74c3c; }}
-        .container {{ max-width: 1400px; margin: 20px auto; padding: 0 20px; }}
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-page); color: var(--text-dark); }}
+        .header {{ background: linear-gradient(135deg, var(--header-grad-start) 0%, var(--header-grad-end) 100%); color: #F5EFE6; padding: 36px 20px; text-align: center; box-shadow: var(--shadow-md); position: relative; overflow: hidden; }}
+        .header::before {{ content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); }}
+        .header h1 {{ font-size: 2.4em; margin-bottom: 10px; font-weight: 600; letter-spacing: 0.5px; }}
+        .header h1 .accent {{ color: var(--accent); }}
+        .header p {{ font-size: 1.05em; opacity: 0.85; letter-spacing: 0.3px; }}
+        .controls {{ background: var(--bg-card); padding: 22px 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; box-shadow: var(--shadow-sm); border-bottom: 1px solid var(--border); }}
+        .month-btn {{ padding: 10px 22px; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text-mid); border-radius: 24px; cursor: pointer; font-weight: 600; transition: all 0.25s ease; letter-spacing: 0.3px; }}
+        .month-btn:hover {{ border-color: var(--primary-light); color: var(--primary); background: var(--bg-soft); }}
+        .month-btn.active {{ background: var(--primary); color: var(--bg-card); border-color: var(--primary); box-shadow: 0 2px 8px rgba(139,111,71,0.25); }}
+        .tabs {{ display: flex; background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 0 20px; gap: 0; box-shadow: var(--shadow-sm); }}
+        .tab-btn {{ padding: 16px 26px; background: none; border: none; cursor: pointer; font-weight: 600; color: var(--text-soft); border-bottom: 3px solid transparent; transition: all 0.25s ease; letter-spacing: 0.3px; }}
+        .tab-btn:hover {{ color: var(--primary); background: var(--bg-soft); }}
+        .tab-btn.active {{ color: var(--primary-dark); border-bottom-color: var(--accent); background: var(--bg-soft); }}
+        .container {{ max-width: 1400px; margin: 24px auto; padding: 0 20px; }}
         .tab-content {{ display: none; }}
         .tab-content.active {{ display: block; }}
-        .section-title {{ font-size: 1.3em; font-weight: 700; color: #1a1a2e; margin: 25px 0 15px 0; padding-bottom: 8px; border-bottom: 2px solid #e74c3c; display: inline-block; }}
-        .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
-        .kpi-card {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }}
-        .kpi-label {{ color: #999; font-size: 0.9em; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }}
-        .kpi-value {{ font-size: 1.8em; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; }}
+        .section-title {{ font-size: 1.25em; font-weight: 700; color: var(--text-dark); margin: 28px 0 16px 0; padding: 0 0 10px 0; border-bottom: 2px solid var(--accent); display: inline-block; letter-spacing: 0.3px; }}
+        .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; margin-bottom: 28px; }}
+        .kpi-card {{ background: var(--bg-card); padding: 22px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-soft); transition: all 0.25s ease; }}
+        .kpi-card:hover {{ transform: translateY(-2px); box-shadow: var(--shadow-md); }}
+        .kpi-label {{ color: var(--text-soft); font-size: 0.82em; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }}
+        .kpi-value {{ font-size: 1.85em; font-weight: 700; color: var(--text-dark); margin-bottom: 8px; letter-spacing: -0.3px; }}
         .kpi-change {{ font-size: 0.85em; font-weight: 600; display: flex; align-items: center; gap: 5px; }}
-        .chart-container {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; position: relative; height: 400px; }}
-        .chart-title {{ font-size: 1.1em; font-weight: 600; margin-bottom: 15px; color: #1a1a2e; }}
+        .chart-container {{ background: var(--bg-card); padding: 22px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-soft); margin-bottom: 20px; position: relative; height: 410px; transition: all 0.25s ease; }}
+        .chart-container:hover {{ box-shadow: var(--shadow-md); }}
+        .chart-title {{ font-size: 1.05em; font-weight: 700; margin-bottom: 16px; color: var(--text-dark); letter-spacing: 0.2px; }}
         .chart-wrapper {{ position: relative; height: 350px; }}
         .section-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
-        .table-container {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow-x: auto; margin-bottom: 20px; }}
+        .table-container {{ background: var(--bg-card); padding: 22px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-soft); overflow-x: auto; margin-bottom: 20px; transition: all 0.25s ease; }}
+        .table-container:hover {{ box-shadow: var(--shadow-md); }}
         table {{ width: 100%; border-collapse: collapse; }}
-        thead {{ background-color: #f8f9fa; border-bottom: 2px solid #e74c3c; }}
-        th {{ padding: 12px; text-align: left; font-weight: 600; color: #1a1a2e; font-size: 0.9em; letter-spacing: 0.5px; }}
-        td {{ padding: 12px; border-bottom: 1px solid #eee; }}
-        tbody tr:hover {{ background-color: #f9f9f9; }}
-        .badge {{ display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 600; }}
-        .badge.up {{ background-color: #d5f4e6; color: #27ae60; }}
-        .badge.down {{ background-color: #fadbd8; color: #e74c3c; }}
-        .badge.neutral {{ background-color: #eee; color: #999; }}
-        th.right, td.right {{ text-align: right; }}
+        thead {{ background-color: var(--bg-section); border-bottom: 2px solid var(--accent); }}
+        th {{ padding: 13px 14px; text-align: left; font-weight: 700; color: var(--text-dark); font-size: 0.88em; letter-spacing: 0.5px; text-transform: uppercase; }}
+        td {{ padding: 13px 14px; border-bottom: 1px solid var(--border-soft); color: var(--text-dark); }}
+        tbody tr:hover {{ background-color: var(--bg-soft); }}
+        tbody tr:last-child td {{ border-bottom: none; }}
+        .badge {{ display: inline-block; padding: 4px 11px; border-radius: 12px; font-size: 0.82em; font-weight: 700; letter-spacing: 0.3px; }}
+        .badge.up {{ background-color: var(--green-up-bg); color: var(--green-up); }}
+        .badge.down {{ background-color: var(--red-down-bg); color: var(--red-down); }}
+        .badge.neutral {{ background-color: var(--border); color: var(--text-soft); }}
+        th.right, td.right {{ text-align: right; font-variant-numeric: tabular-nums; }}
         @media (max-width: 768px) {{
             .kpi-grid {{ grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }}
             .section-grid {{ grid-template-columns: 1fr; }}
-            .header h1 {{ font-size: 1.8em; }}
+            .header h1 {{ font-size: 1.7em; }}
             .tabs {{ overflow-x: auto; }}
         }}
-        .lookup-bar {{ background: white; padding: 18px 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 20px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }}
-        .lookup-bar label {{ font-weight: 600; color: #1a1a2e; }}
-        .lookup-bar select, .lookup-bar input {{ padding: 8px 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 0.95em; font-family: inherit; }}
-        .lookup-bar input:focus, .lookup-bar select:focus {{ outline: none; border-color: #e74c3c; }}
+        .lookup-bar {{ background: var(--bg-card); padding: 20px 22px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-soft); margin-bottom: 20px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }}
+        .lookup-bar label {{ font-weight: 600; color: var(--text-dark); font-size: 0.92em; }}
+        .lookup-bar select, .lookup-bar input {{ padding: 9px 13px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.93em; font-family: inherit; color: var(--text-dark); background: var(--bg-card); }}
+        .lookup-bar input:focus, .lookup-bar select:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139,111,71,0.12); }}
         .lookup-bar .mode-toggle {{ display: flex; gap: 6px; }}
-        .lookup-bar .mode-btn {{ padding: 7px 14px; border: 2px solid #ddd; background: white; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.9em; }}
-        .lookup-bar .mode-btn.active {{ background: #e74c3c; color: white; border-color: #e74c3c; }}
+        .lookup-bar .mode-btn {{ padding: 8px 16px; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text-mid); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.88em; transition: all 0.2s ease; }}
+        .lookup-bar .mode-btn:hover {{ border-color: var(--primary-light); }}
+        .lookup-bar .mode-btn.active {{ background: var(--primary); color: var(--bg-card); border-color: var(--primary); }}
         .lookup-bar .channel-pills {{ display: flex; gap: 6px; flex-wrap: wrap; }}
-        .lookup-bar .ch-pill {{ padding: 6px 12px; border: 2px solid #ddd; background: white; border-radius: 20px; cursor: pointer; font-size: 0.85em; font-weight: 600; }}
-        .lookup-bar .ch-pill.active {{ background: #1a1a2e; color: white; border-color: #1a1a2e; }}
-        .lookup-bar .compare-info {{ font-size: 0.85em; color: #666; margin-left: auto; }}
+        .lookup-bar .ch-pill {{ padding: 7px 14px; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text-mid); border-radius: 20px; cursor: pointer; font-size: 0.85em; font-weight: 600; transition: all 0.2s ease; }}
+        .lookup-bar .ch-pill:hover {{ border-color: var(--primary-light); color: var(--primary); }}
+        .lookup-bar .ch-pill.active {{ background: var(--text-dark); color: var(--bg-card); border-color: var(--text-dark); }}
+        .lookup-bar .compare-info {{ font-size: 0.85em; color: var(--text-mid); margin-left: auto; }}
         .search-bar {{ position: relative; margin-bottom: 20px; }}
-        .search-bar input {{ width: 100%; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; font-family: inherit; box-sizing: border-box; }}
-        .search-bar input:focus {{ outline: none; border-color: #e74c3c; }}
-        .search-results {{ position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 8px; max-height: 320px; overflow-y: auto; z-index: 100; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }}
+        .search-bar input {{ width: 100%; padding: 13px 18px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 15px; font-family: inherit; box-sizing: border-box; background: var(--bg-card); color: var(--text-dark); }}
+        .search-bar input:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139,111,71,0.12); }}
+        .search-results {{ position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; max-height: 320px; overflow-y: auto; z-index: 100; display: none; box-shadow: var(--shadow-lg); }}
         .search-results.show {{ display: block; }}
-        .search-result-item {{ padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; font-size: 14px; transition: background 0.15s; }}
-        .search-result-item:hover {{ background: #fef3f0; }}
+        .search-result-item {{ padding: 11px 18px; cursor: pointer; border-bottom: 1px solid var(--border-soft); font-size: 14px; transition: background 0.15s; color: var(--text-dark); }}
+        .search-result-item:hover {{ background: var(--bg-soft); }}
         .search-result-item:last-child {{ border-bottom: none; }}
-        .search-result-item mark {{ background: #fff3cd; padding: 0 2px; border-radius: 2px; }}
-        .search-result-item .meta {{ font-size: 12px; color: #999; margin-top: 3px; }}
-        #lookup-sp-detail {{ background: #fafafa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
-        #lookup-sp-name {{ font-size: 1.05em; color: #1a1a2e; margin-bottom: 18px; padding: 12px; background: #fff; border-radius: 6px; border-left: 4px solid #e74c3c; }}
+        .search-result-item mark {{ background: #F5E2B5; color: var(--primary-dark); padding: 0 3px; border-radius: 3px; font-weight: 600; }}
+        .search-result-item .meta {{ font-size: 12px; color: var(--text-soft); margin-top: 3px; }}
+        #lookup-sp-detail {{ background: var(--bg-soft); padding: 22px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border-soft); }}
+        #lookup-sp-name {{ font-size: 1.05em; color: var(--text-dark); margin-bottom: 18px; padding: 14px; background: var(--bg-card); border-radius: 8px; border-left: 4px solid var(--accent); box-shadow: var(--shadow-sm); }}
+        /* === Weekly Report styles === */
+        .wr-section {{ background: var(--bg-card); padding: 24px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-soft); margin-bottom: 20px; }}
+        .wr-section-title {{ font-size: 1.1em; font-weight: 700; color: var(--text-dark); margin-bottom: 18px; padding-bottom: 10px; border-bottom: 2px solid var(--accent); display: inline-block; letter-spacing: 0.3px; }}
+        .wr-meta {{ font-size: 0.85em; color: var(--text-mid); margin-bottom: 14px; font-style: italic; }}
+        .wr-grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
+        .wr-pill {{ display: inline-block; padding: 4px 10px; border-radius: 10px; font-size: 0.8em; font-weight: 600; background: var(--bg-section); color: var(--primary-dark); margin-left: 6px; }}
+        .wr-empty {{ text-align: center; padding: 24px; color: var(--text-soft); font-style: italic; background: var(--bg-soft); border-radius: 10px; }}
+        @media (max-width: 768px) {{
+            .wr-grid-2 {{ grid-template-columns: 1fr; }}
+        }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>LOHO House 營收報表 Báo Cáo Doanh Thu 2026</h1>
+        <h1><span class="accent">LOHO</span> House 營收報表 Báo Cáo Doanh Thu 2026</h1>
         <p>更新時間 Cập nhật: {today}</p>
     </div>
 
@@ -783,6 +1133,7 @@ def generate_html(data_json, daily_json, products_json, output_path):
         <button class="tab-btn" data-tab="lazada">Lazada</button>
         <button class="tab-btn" data-tab="website">Website</button>
         <button class="tab-btn" data-tab="lookup">查詢 Tra Cứu Theo Ngày</button>
+        <button class="tab-btn" data-tab="weekly">週報 Báo Cáo Hàng Tuần</button>
     </div>
 
     <div class="container">
@@ -961,6 +1312,187 @@ def generate_html(data_json, daily_json, products_json, output_path):
             </div>
         </div>
 
+        <!-- ===== BAO CAO HANG TUAN TAB ===== -->
+        <div id="weekly" class="tab-content">
+            <div class="lookup-bar">
+                <div class="mode-toggle">
+                    <button class="mode-btn active" data-mode="single" data-target="wr">1 ngày</button>
+                    <button class="mode-btn" data-mode="range" data-target="wr">Khoảng ngày</button>
+                </div>
+                <div id="wr-single-controls">
+                    <label>Chọn ngày:</label>
+                    <input type="date" id="wr-date" value="{last_date}" min="{first_date}" max="{last_date}">
+                </div>
+                <div id="wr-range-controls" style="display:none;">
+                    <label>Từ:</label>
+                    <input type="date" id="wr-start" value="{first_date}" min="{first_date}" max="{last_date}">
+                    <label>Đến:</label>
+                    <input type="date" id="wr-end" value="{last_date}" min="{first_date}" max="{last_date}">
+                </div>
+                <div class="channel-pills">
+                    <button class="ch-pill active" data-channel="all" data-target="wr">Tất cả</button>
+                    <button class="ch-pill" data-channel="shopee" data-target="wr">Shopee</button>
+                    <button class="ch-pill" data-channel="tiktok" data-target="wr">TikTok</button>
+                    <button class="ch-pill" data-channel="web" data-target="wr">Web</button>
+                    <button class="ch-pill" data-channel="lazada" data-target="wr">Lazada</button>
+                </div>
+                <div class="compare-info" id="wr-compare-info"></div>
+            </div>
+
+            <div class="section-title">① 營收總覽 Doanh Thu (Dashboard thống kê &amp; Quyết toán)</div>
+            <div class="table-container">
+                <div class="wr-meta" id="wr-revenue-meta"></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>通路 Kênh</th>
+                            <th class="right">營收 Doanh thu từ sàn</th>
+                            <th class="right">結算 Doanh thu quyết toán</th>
+                            <th class="right">差額 Chênh lệch</th>
+                            <th class="right">結算率 % Quyết toán</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-revenue-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">② 暢銷產品 Top 10 SP Bán Chạy (Tuần &amp; Tháng)</div>
+            <div class="wr-grid-2">
+                <div class="table-container" style="height:auto;">
+                    <div class="chart-title">🏆 Top 10 SP trong tuần (kỳ đã chọn) <span class="wr-pill" id="wr-top-week-meta"></span></div>
+                    <table>
+                        <thead><tr><th>#</th><th>Tên SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th>So với cùng kỳ tuần trước</th></tr></thead>
+                        <tbody id="wr-top-week-table"></tbody>
+                    </table>
+                </div>
+                <div class="table-container" style="height:auto;">
+                    <div class="chart-title">🏆 Top 10 SP trong tháng <span class="wr-pill" id="wr-top-month-meta"></span></div>
+                    <table>
+                        <thead><tr><th>#</th><th>Tên SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th>So với tháng trước</th></tr></thead>
+                        <tbody id="wr-top-month-table"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section-title">③ 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
+            <div class="table-container">
+                <div class="wr-meta">Số liệu nhập tay từ file <code>weekly_report_data.json</code> — Tuần đang xem: <b id="wr-ad-week-label">—</b></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>項目 Kênh bán</th>
+                            <th class="right">Shopee tuần trước</th>
+                            <th class="right">Shopee tuần này</th>
+                            <th>變化 ↕</th>
+                            <th class="right">Tiktok tuần trước</th>
+                            <th class="right">Tiktok tuần này</th>
+                            <th>變化 ↕</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-ads-weekly-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">④ 廣告費用月報 Chi Phí Quảng Cáo Theo Tháng</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>項目 Kênh bán</th>
+                            <th class="right">Shopee T này</th>
+                            <th class="right">Shopee Cùng Kỳ</th>
+                            <th class="right">Shopee T sau</th>
+                            <th class="right">Tiktok T này</th>
+                            <th class="right">Tiktok Cùng Kỳ</th>
+                            <th class="right">Tiktok T sau</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-ads-monthly-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">⑤ 廣告費用占比 Tỷ Lệ Phí QC / Doanh Thu</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>項目 Chỉ số</th>
+                            <th class="right">Shopee T này</th>
+                            <th class="right">Shopee T sau</th>
+                            <th class="right">Tiktok T này</th>
+                            <th class="right">Tiktok T sau</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-ads-ratio-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">⑥ 客戶關懷 Chăm Sóc Khách Hàng (Theo Tuần)</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>通路 Kênh</th>
+                            <th class="right">Lượt Chat</th>
+                            <th class="right">Tỷ lệ chuyển đổi</th>
+                            <th class="right">Doanh số</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-care-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">⑦ 客戶評價 Đánh Giá Khách Hàng</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>通路 Kênh</th>
+                            <th class="right">Rate 5 sao ⭐</th>
+                            <th class="right">Rate 3 sao</th>
+                            <th class="right">Rate 1 sao</th>
+                            <th>Lý do</th>
+                            <th>Tình trạng xử lý</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-reviews-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">⑧ 投訴處理 Xử Lý Khiếu Nại</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>通路 Kênh</th>
+                            <th class="right">Tổng Tháng</th>
+                            <th class="right">KN trong tuần</th>
+                            <th class="right">Đã xử lý</th>
+                            <th class="right">Đang xử lý</th>
+                            <th>Lý do</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-complaints-table"></tbody>
+                </table>
+            </div>
+
+            <div class="section-title">⑨ 投訴占比 Tỷ Lệ Đơn Khiếu Nại / Tổng Đơn</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>項目 Chỉ số</th>
+                            <th class="right">Shopee</th>
+                            <th class="right">Tiktok</th>
+                            <th class="right">Website</th>
+                            <th class="right">Lazada</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wr-complaint-ratio-table"></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- ===== PLATFORM TABS ===== -->''' + '''
 ''' + _generate_platform_tabs() + f'''
     </div>
@@ -970,21 +1502,30 @@ const D = {data_str};
 const allMonths = {trend_labels};
 const categoryNames={{san:"地板",son:"油漆",congcu:"工具",decor:"裝飾",other:"其他"}};
 const categoryNamesVi={{san:"Sàn nhựa",son:"Sơn tường",congcu:"Công cụ",decor:"Decor",other:"Khác"}};
-const chartColors=["#e74c3c","#3498db","#2ecc71","#f39c12","#9b59b6"];
+const chartColors=["#8B6F47","#C9A961","#A89071","#6B8E5A","#B89970"];
+const chartColorsAlt=["#3D2E1F","#8B6F47","#C9A961","#A6864B","#6B8E5A"];
+const CSS_PRIMARY="#8B6F47";
+const CSS_PRIMARY_RGBA="rgba(139,111,71,0.12)";
+const CSS_TEXT_DARK="#3D2E1F";
+const CSS_ACCENT="#C9A961";
+const CSS_NEUTRAL="#A89071";
 const platformNames={{shopee:"Shopee",tiktok:"TikTok",web:"Website",lazada:"Lazada"}};
 const tabToKey={{shopee:"shopee",tiktok:"tiktok",lazada:"lazada",website:"web"}};
 function resolveKey(tid){{return tabToKey[tid]||tid;}}
 let currentMonth="{last_month}",charts={{}};
 const DD={daily_str};
 const PRODUCTS={products_str};
+const WEEKLY={weekly_str};
 const lookupFirstDate="{first_date}";
 const lookupLastDate="{last_date}";
 let lookupMode="single";
 let lookupChannel="all";
+let wrMode="single";
+let wrChannel="all";
 
 function fmt(n){{if(n>=1e9)return (n/1e9).toFixed(2)+"tỷ";if(n>=1e6)return (n/1e6).toFixed(1)+"tr";return n.toString().replace(/\\B(?=(\\d{{3}})+(?!\\d))/g,".");}}
 function fmtFull(n){{return n.toString().replace(/\\B(?=(\\d{{3}})+(?!\\d))/g,".");}}
-function chg(c,p){{if(!p)return{{pct:"N/A",arrow:"—",color:"#999"}};const pct=((c-p)/p*100).toFixed(1);return{{pct,arrow:pct>=0?"↑":"↓",color:pct>=0?"#27ae60":"#e74c3c"}};}}
+function chg(c,p){{if(!p)return{{pct:"N/A",arrow:"—",color:"#999"}};const pct=((c-p)/p*100).toFixed(1);return{{pct,arrow:pct>=0?"↑":"↓",color:pct>=0?"#6B8E5A":"#B5573D"}};}}
 function getPrev(){{const idx=allMonths.indexOf(currentMonth);return idx>0?allMonths[idx-1]:null;}}
 function getD(p,m){{
     if(!m||!D[p]||!D[p][m]) return {{orders:0,revenue:0,fees:0,net:0,daily:{{}},categories:{{san:0,son:0,congcu:0,decor:0,other:0}},products:[],fee_pct:0}};
@@ -1019,7 +1560,7 @@ function renderDaily(platforms,canvasId){{
     platforms.forEach(p=>{{const d=getD(p,currentMonth);Object.keys(d.daily).forEach(y=>{{if(!ad[y])ad[y]=0;ad[y]+=d.daily[y].revenue;}});}});
     const ds=Object.keys(ad).sort((a,b)=>parseInt(a)-parseInt(b)),dvs=ds.map(x=>ad[x]);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"line",data:{{labels:ds,datasets:[{{label:"營收",data:dvs,borderColor:"#e74c3c",backgroundColor:"rgba(231,76,60,0.1)",fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"line",data:{{labels:ds,datasets:[{{label:"營收",data:dvs,borderColor:"#8B6F47",backgroundColor:"rgba(139,111,71,0.10)",pointBackgroundColor:"#8B6F47",pointBorderColor:"#FFFCF7",pointBorderWidth:2,pointRadius:4,fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 /* ③ Trend + channel comparison */
@@ -1028,7 +1569,7 @@ function renderTrend(platforms,canvasId){{
         const p=platforms[0];
         const data=allMonths.map(m=>getD(p,m).revenue);
         if(charts[canvasId])charts[canvasId].destroy();
-        charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"營收",data:data,backgroundColor:"#e74c3c"}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+        charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"營收",data:data,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
     }} else {{
         const datasets=["shopee","tiktok","web","lazada"].map((p,i)=>({{label:platformNames[p],data:allMonths.map(m=>getD(p,m).revenue),backgroundColor:chartColors[i]}}));
         if(charts[canvasId])charts[canvasId].destroy();
@@ -1042,7 +1583,7 @@ function renderChannelCompare(canvasId){{
     const cur=["shopee","tiktok","web","lazada"].map(p=>getD(p,currentMonth).revenue);
     const prev=["shopee","tiktok","web","lazada"].map(p=>getD(p,pm).revenue);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#95a5a6"}},{{label:"本月",data:cur,backgroundColor:"#e74c3c"}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#A89071",borderRadius:6}},{{label:"本月",data:cur,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 function renderMomTable(platforms,elId){{
@@ -1114,7 +1655,7 @@ function renderMomChannelChart(canvasId){{
     const cur=platforms.map(p=>getD(p,currentMonth).revenue);
     const prev=platforms.map(p=>getD(p,pm).revenue);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#95a5a6"}},{{label:"本月",data:cur,backgroundColor:"#e74c3c"}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#A89071",borderRadius:6}},{{label:"本月",data:cur,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 function renderMomChannelTable(elId){{
@@ -1154,14 +1695,14 @@ function renderProducts(platforms,elId,showChannel){{
 function renderOrdersTrend(platform,canvasId){{
     const data=allMonths.map(m=>getD(platform,m).orders);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"訂單",data:data,backgroundColor:"#3498db"}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"訂單",data:data,backgroundColor:"#C9A961",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 /* Platform-specific fee for single platform */
 function renderPlatformFees(platform,chartId,tableId){{
     const feesData=allMonths.map(m=>getD(platform,m).fees);
     if(charts[chartId])charts[chartId].destroy();
-    charts[chartId]=new Chart(document.getElementById(chartId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"平台費用",data:feesData,backgroundColor:"#f39c12"}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[chartId]=new Chart(document.getElementById(chartId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"平台費用",data:feesData,backgroundColor:"#A6864B",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
     let h="";
     allMonths.forEach(m=>{{
         const d=getD(platform,m);
@@ -1277,11 +1818,11 @@ function lookup(){{
     const dvs=days.map(d=>cur.daily[d].revenue);
     const dlabels=days.map(d=>fmtDate(d));
     if(charts["lookup-daily-chart"])charts["lookup-daily-chart"].destroy();
-    charts["lookup-daily-chart"]=new Chart(document.getElementById("lookup-daily-chart"),{{type:"line",data:{{labels:dlabels,datasets:[{{label:"營收",data:dvs,borderColor:"#e74c3c",backgroundColor:"rgba(231,76,60,0.1)",fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts["lookup-daily-chart"]=new Chart(document.getElementById("lookup-daily-chart"),{{type:"line",data:{{labels:dlabels,datasets:[{{label:"營收",data:dvs,borderColor:"#8B6F47",backgroundColor:"rgba(139,111,71,0.10)",pointBackgroundColor:"#8B6F47",pointBorderColor:"#FFFCF7",pointBorderWidth:2,pointRadius:4,fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 
     /* (3) Trend compare */
     if(charts["lookup-trend-chart"])charts["lookup-trend-chart"].destroy();
-    charts["lookup-trend-chart"]=new Chart(document.getElementById("lookup-trend-chart"),{{type:"bar",data:{{labels:["週前","昨日","本期"],datasets:[{{label:"營收",data:[prevWeek.revenue,prev.revenue,cur.revenue],backgroundColor:["#9b59b6","#95a5a6","#e74c3c"]}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts["lookup-trend-chart"]=new Chart(document.getElementById("lookup-trend-chart"),{{type:"bar",data:{{labels:["週前","昨日","本期"],datasets:[{{label:"營收",data:[prevWeek.revenue,prev.revenue,cur.revenue],backgroundColor:["#B89970","#A89071","#8B6F47"],borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 
     /* (3b) Channel compare */
     const chLabels=["Shopee","TikTok","Web","Lazada"];
@@ -1328,7 +1869,7 @@ function lookup(){{
     const chPrev=["shopee","tiktok","web","lazada"].map(p=>prev.byChannel[p]||0);
     const chWeek=["shopee","tiktok","web","lazada"].map(p=>prevWeek.byChannel[p]||0);
     if(charts["lookup-mom-channel-chart"])charts["lookup-mom-channel-chart"].destroy();
-    charts["lookup-mom-channel-chart"]=new Chart(document.getElementById("lookup-mom-channel-chart"),{{type:"bar",data:{{labels:chLabels,datasets:[{{label:"週前",data:chWeek,backgroundColor:"#9b59b6"}},{{label:"昨日",data:chPrev,backgroundColor:"#95a5a6"}},{{label:"本期",data:chCur,backgroundColor:"#e74c3c"}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts["lookup-mom-channel-chart"]=new Chart(document.getElementById("lookup-mom-channel-chart"),{{type:"bar",data:{{labels:chLabels,datasets:[{{label:"週前",data:chWeek,backgroundColor:"#B89970",borderRadius:6}},{{label:"昨日",data:chPrev,backgroundColor:"#A89071",borderRadius:6}},{{label:"本期",data:chCur,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
     let mch="";
     ["shopee","tiktok","web","lazada"].forEach(p=>{{
         const a=cur.byChannel[p]||0,b=prev.byChannel[p]||0,c=prevWeek.byChannel[p]||0;
@@ -1344,6 +1885,224 @@ function lookup(){{
     if(!ph)ph='<tr><td colspan="4" style="text-align:center;color:#999;padding:20px;">Không có dữ liệu sản phẩm trong khoảng đã chọn</td></tr>';
     document.getElementById("lookup-products-table").innerHTML=ph;
     // SP detail co bo dieu khien rieng, khong re-render khi controls main thay doi
+}}
+
+/* ===== WEEKLY REPORT ===== */
+function getWrRange(){{
+    if(wrMode==="single"){{
+        const v=document.getElementById("wr-date").value||lookupLastDate;
+        return [v,v];
+    }} else {{
+        let s=document.getElementById("wr-start").value||lookupFirstDate;
+        let e=document.getElementById("wr-end").value||lookupLastDate;
+        if(s>e){{const t=s;s=e;e=t;}}
+        return [s,e];
+    }}
+}}
+function getWrPlatforms(){{
+    return wrChannel==="all"?["shopee","tiktok","web","lazada"]:[wrChannel];
+}}
+
+function ymdToMonthKey(ymd){{ const p=ymd.split("-"); return "T"+parseInt(p[1],10); }}
+
+function aggMonth(monthKey, platforms){{
+    const result={{revenue:0,products:{{}}}};
+    platforms.forEach(p=>{{
+        if(!DD[p])return;
+        Object.keys(DD[p]).forEach(d=>{{
+            if(ymdToMonthKey(d)===monthKey){{
+                const day=DD[p][d];
+                result.revenue+=day.revenue;
+                (day.products||[]).forEach(prod=>{{
+                    if(!result.products[prod.name])result.products[prod.name]={{qty:0,revenue:0}};
+                    result.products[prod.name].qty+=prod.qty;
+                    result.products[prod.name].revenue+=prod.revenue;
+                }});
+            }}
+        }});
+    }});
+    return result;
+}}
+
+function getCurrentWeekData(){{
+    const cw=WEEKLY.current_week;
+    if(cw&&WEEKLY.weeks&&WEEKLY.weeks[cw])return WEEKLY.weeks[cw];
+    const keys=Object.keys(WEEKLY.weeks||{{}});
+    return keys.length>0?WEEKLY.weeks[keys[0]]:null;
+}}
+
+function badgeDelta(cur,prev){{
+    if(prev===null||prev===undefined||prev===0)return '<span class="badge neutral">—</span>';
+    const delta=((cur-prev)/prev*100).toFixed(1);
+    return delta>=0?`<span class="badge up">↑ ${{delta}}%</span>`:`<span class="badge down">↓ ${{Math.abs(delta).toFixed(1)}}%</span>`;
+}}
+
+function fmtCellNum(n){{ return (n===null||n===undefined)?"—":fmtFull(Math.round(n)); }}
+
+function renderWeekly(){{
+    const [s,e]=getWrRange();
+    const platforms=getWrPlatforms();
+    const cur=aggLookup(s,e,platforms);
+    const [ws,we]=getPrevWeekRange(s,e);
+    const prevWeek=aggLookup(ws,we,platforms);
+
+    const same=(s===e);
+    const periodLabel=same?fmtDate(s):`${{fmtDate(s)}} → ${{fmtDate(e)}}`;
+    const prevPeriodLabel=(ws===we)?fmtDate(ws):`${{fmtDate(ws)}} → ${{fmtDate(we)}}`;
+    const chLabel=wrChannel==="all"?"tất cả kênh":platformNames[wrChannel];
+    document.getElementById("wr-compare-info").innerHTML=`Kỳ này: <b>${{periodLabel}}</b> | Tuần trước: ${{prevPeriodLabel}} | Kênh: <b>${{chLabel}}</b>`;
+    document.getElementById("wr-revenue-meta").innerHTML=`Kỳ đang xem: <b>${{periodLabel}}</b> — Số liệu sàn lấy từ dashboard tự động; số liệu quyết toán nhập tay`;
+
+    /* (1) Doanh thu sàn vs quyết toán */
+    const wkData=getCurrentWeekData();
+    const settlement=(wkData&&wkData.settlement)||{{}};
+    const settMap={{shopee:settlement.shopee_settled||0,tiktok:settlement.tiktok_settled||0,lazada:settlement.lazada_settled||0,web:settlement.website_settled||0}};
+    let revHtml="";
+    let totRev=0,totSet=0;
+    ["shopee","tiktok","lazada","web"].forEach(p=>{{
+        const r=cur.byChannel[p]||0;
+        const st=settMap[p]||0;
+        const diff=r-st;
+        const pct=r>0?((st/r)*100).toFixed(1)+"%":"—";
+        revHtml+=`<tr><td><b>${{platformNames[p]}}</b></td><td class="right">${{fmtFull(r)}}</td><td class="right">${{fmtFull(st)}}</td><td class="right">${{fmtFull(diff)}}</td><td class="right">${{pct}}</td></tr>`;
+        totRev+=r;totSet+=st;
+    }});
+    const totPct=totRev>0?((totSet/totRev)*100).toFixed(1)+"%":"—";
+    revHtml+=`<tr style="font-weight:700;background:var(--bg-section)"><td>合計 Tổng Cộng</td><td class="right">${{fmtFull(totRev)}}</td><td class="right">${{fmtFull(totSet)}}</td><td class="right">${{fmtFull(totRev-totSet)}}</td><td class="right">${{totPct}}</td></tr>`;
+    document.getElementById("wr-revenue-table").innerHTML=revHtml;
+
+    /* (2) Top 10 SP Tuần + Tháng */
+    const prodMap={{}};
+    platforms.forEach(p=>{{
+        if(!DD[p])return;
+        Object.keys(DD[p]).forEach(d=>{{
+            if(d>=s&&d<=e){{
+                (DD[p][d].products||[]).forEach(prod=>{{
+                    if(!prodMap[prod.name])prodMap[prod.name]={{qty:0,revenue:0}};
+                    prodMap[prod.name].qty+=prod.qty;
+                    prodMap[prod.name].revenue+=prod.revenue;
+                }});
+            }}
+        }});
+    }});
+    const prevProdMap={{}};
+    platforms.forEach(p=>{{
+        if(!DD[p])return;
+        Object.keys(DD[p]).forEach(d=>{{
+            if(d>=ws&&d<=we){{
+                (DD[p][d].products||[]).forEach(prod=>{{
+                    if(!prevProdMap[prod.name])prevProdMap[prod.name]={{qty:0,revenue:0}};
+                    prevProdMap[prod.name].qty+=prod.qty;
+                    prevProdMap[prod.name].revenue+=prod.revenue;
+                }});
+            }}
+        }});
+    }});
+    const topWeek=Object.entries(prodMap).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,10);
+    let twH="";
+    topWeek.forEach(([name,v],i)=>{{
+        const prev=prevProdMap[name];
+        const prevRev=prev?prev.revenue:0;
+        twH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
+    }});
+    if(!twH)twH='<tr><td colspan="5" class="wr-empty">Không có data SP trong khoảng đã chọn</td></tr>';
+    document.getElementById("wr-top-week-table").innerHTML=twH;
+    document.getElementById("wr-top-week-meta").textContent=periodLabel;
+
+    const endMonth=ymdToMonthKey(e);
+    const endMonthIdx=allMonths.indexOf(endMonth);
+    const prevMonth=endMonthIdx>0?allMonths[endMonthIdx-1]:null;
+    const monthData=aggMonth(endMonth,platforms);
+    const prevMonthData=prevMonth?aggMonth(prevMonth,platforms):{{products:{{}}}};
+    const topMonth=Object.entries(monthData.products).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,10);
+    let tmH="";
+    topMonth.forEach(([name,v],i)=>{{
+        const prev=prevMonthData.products[name];
+        const prevRev=prev?prev.revenue:0;
+        tmH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
+    }});
+    if(!tmH)tmH='<tr><td colspan="5" class="wr-empty">Không có data SP cho tháng</td></tr>';
+    document.getElementById("wr-top-month-table").innerHTML=tmH;
+    document.getElementById("wr-top-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
+
+    /* (3) Ads weekly */
+    document.getElementById("wr-ad-week-label").textContent=wkData?wkData.label||"—":"Chưa có data";
+    const adsW=(wkData&&wkData.ads_weekly)||{{shopee:{{}},tiktok:{{}}}};
+    const sh=adsW.shopee||{{}},tk=adsW.tiktok||{{}};
+    const rowsAdsW=[
+        {{label:"Chi phí",sp:sh.prev_cost,sn:sh.cost,tp:tk.prev_cost,tn:tk.cost}},
+        {{label:"Doanh số",sp:sh.prev_revenue,sn:sh.revenue,tp:tk.prev_revenue,tn:tk.revenue}},
+        {{label:"Số đơn hàng",sp:sh.prev_orders,sn:sh.orders,tp:tk.prev_orders,tn:tk.orders}},
+        {{label:"Sản phẩm bán",sp:sh.prev_products,sn:sh.products,tp:tk.prev_products,tn:tk.products}}
+    ];
+    let adwH="";
+    rowsAdsW.forEach(r=>{{
+        adwH+=`<tr><td><b>${{r.label}}</b></td><td class="right">${{fmtCellNum(r.sp)}}</td><td class="right">${{fmtCellNum(r.sn)}}</td><td>${{badgeDelta(r.sn||0,r.sp||0)}}</td><td class="right">${{fmtCellNum(r.tp)}}</td><td class="right">${{fmtCellNum(r.tn)}}</td><td>${{badgeDelta(r.tn||0,r.tp||0)}}</td></tr>`;
+    }});
+    document.getElementById("wr-ads-weekly-table").innerHTML=adwH;
+
+    /* (4) Ads monthly */
+    const adsM=(wkData&&wkData.ads_monthly)||{{shopee:{{}},tiktok:{{}}}};
+    const shM=adsM.shopee||{{}},tkM=adsM.tiktok||{{}};
+    const rowsAdsM=[
+        {{label:"Chi phí",sc:shM.t_current_cost,spy:shM.t_prev_year_cost,sn:shM.t_next_cost,tc:tkM.t_current_cost,tpy:tkM.t_prev_year_cost,tn:tkM.t_next_cost}},
+        {{label:"Doanh số",sc:shM.t_current_revenue,spy:shM.t_prev_year_revenue,sn:shM.t_next_revenue,tc:tkM.t_current_revenue,tpy:tkM.t_prev_year_revenue,tn:tkM.t_next_revenue}},
+        {{label:"Số đơn hàng",sc:shM.t_current_orders,spy:shM.t_prev_year_orders,sn:shM.t_next_orders,tc:tkM.t_current_orders,tpy:tkM.t_prev_year_orders,tn:tkM.t_next_orders}},
+        {{label:"Sản phẩm bán",sc:shM.t_current_products,spy:shM.t_prev_year_products,sn:shM.t_next_products,tc:tkM.t_current_products,tpy:tkM.t_prev_year_products,tn:tkM.t_next_products}}
+    ];
+    let admH="";
+    rowsAdsM.forEach(r=>{{
+        admH+=`<tr><td><b>${{r.label}}</b></td><td class="right">${{fmtCellNum(r.sc)}}</td><td class="right">${{fmtCellNum(r.spy)}}</td><td class="right">${{fmtCellNum(r.sn)}}</td><td class="right">${{fmtCellNum(r.tc)}}</td><td class="right">${{fmtCellNum(r.tpy)}}</td><td class="right">${{fmtCellNum(r.tn)}}</td></tr>`;
+    }});
+    document.getElementById("wr-ads-monthly-table").innerHTML=admH;
+
+    /* (5) Ads ratio */
+    const totalRev=(wkData&&wkData.ads_total_revenue)||{{}};
+    function pct(a,b){{ return (b&&a)?((a/b)*100).toFixed(2)+"%":"—"; }}
+    let ratH="";
+    ratH+=`<tr><td>Chi phí</td><td class="right">${{fmtCellNum(shM.t_current_cost)}}</td><td class="right">${{fmtCellNum(shM.t_next_cost)}}</td><td class="right">${{fmtCellNum(tkM.t_current_cost)}}</td><td class="right">${{fmtCellNum(tkM.t_next_cost)}}</td></tr>`;
+    ratH+=`<tr><td>Doanh số QC</td><td class="right">${{fmtCellNum(shM.t_current_revenue)}}</td><td class="right">${{fmtCellNum(shM.t_next_revenue)}}</td><td class="right">${{fmtCellNum(tkM.t_current_revenue)}}</td><td class="right">${{fmtCellNum(tkM.t_next_revenue)}}</td></tr>`;
+    ratH+=`<tr><td>Tổng doanh thu bán hàng</td><td class="right">${{fmtCellNum(totalRev.shopee_t4)}}</td><td class="right">${{fmtCellNum(totalRev.shopee_t5)}}</td><td class="right">${{fmtCellNum(totalRev.tiktok_t4)}}</td><td class="right">${{fmtCellNum(totalRev.tiktok_t5)}}</td></tr>`;
+    ratH+=`<tr><td><b>CP / Doanh số QC</b></td><td class="right"><b>${{pct(shM.t_current_cost,shM.t_current_revenue)}}</b></td><td class="right"><b>${{pct(shM.t_next_cost,shM.t_next_revenue)}}</b></td><td class="right"><b>${{pct(tkM.t_current_cost,tkM.t_current_revenue)}}</b></td><td class="right"><b>${{pct(tkM.t_next_cost,tkM.t_next_revenue)}}</b></td></tr>`;
+    ratH+=`<tr style="background:var(--bg-section)"><td><b>CP / Tổng Doanh Thu</b></td><td class="right"><b>${{pct(shM.t_current_cost,totalRev.shopee_t4)}}</b></td><td class="right"><b>${{pct(shM.t_next_cost,totalRev.shopee_t5)}}</b></td><td class="right"><b>${{pct(tkM.t_current_cost,totalRev.tiktok_t4)}}</b></td><td class="right"><b>${{pct(tkM.t_next_cost,totalRev.tiktok_t5)}}</b></td></tr>`;
+    document.getElementById("wr-ads-ratio-table").innerHTML=ratH;
+
+    /* (6) Customer Care */
+    const careRows=(wkData&&wkData.customer_care)||[];
+    let carH="";
+    careRows.forEach(r=>{{
+        const conv=typeof r.conversion==="number"?r.conversion.toFixed(2)+"%":(r.conversion||"—");
+        carH+=`<tr><td><b>${{r.channel}}</b></td><td class="right">${{fmtCellNum(r.chats)}}</td><td class="right">${{conv}}</td><td class="right">${{fmtCellNum(r.revenue)}}</td></tr>`;
+    }});
+    if(!carH)carH='<tr><td colspan="4" class="wr-empty">Chưa có data — cập nhật ở file weekly_report_data.json</td></tr>';
+    document.getElementById("wr-care-table").innerHTML=carH;
+
+    /* (7) Reviews */
+    const reviewRows=(wkData&&wkData.reviews)||[];
+    let revwH="";
+    reviewRows.forEach(r=>{{
+        revwH+=`<tr><td><b>${{r.channel}}</b></td><td class="right">${{r.rate5===null||r.rate5===undefined?"—":fmtFull(r.rate5)}}</td><td class="right">${{r.rate3===null||r.rate3===undefined?"—":fmtFull(r.rate3)}}</td><td class="right">${{r.rate1===null||r.rate1===undefined?"—":fmtFull(r.rate1)}}</td><td style="white-space:pre-line;font-size:0.88em">${{r.reason||"—"}}</td><td>${{r.status||"—"}}</td></tr>`;
+    }});
+    if(!revwH)revwH='<tr><td colspan="6" class="wr-empty">Chưa có data</td></tr>';
+    document.getElementById("wr-reviews-table").innerHTML=revwH;
+
+    /* (8) Complaints */
+    const complaintRows=(wkData&&wkData.complaints)||[];
+    let comH="";
+    complaintRows.forEach(r=>{{
+        comH+=`<tr><td><b>${{r.channel}}</b></td><td class="right">${{fmtCellNum(r.total_month)}}</td><td class="right">${{fmtCellNum(r.this_week)}}</td><td class="right">${{fmtCellNum(r.resolved)}}</td><td class="right">${{fmtCellNum(r.pending)}}</td><td style="white-space:pre-line;font-size:0.88em">${{r.reason||"—"}}</td></tr>`;
+    }});
+    if(!comH)comH='<tr><td colspan="6" class="wr-empty">Chưa có data</td></tr>';
+    document.getElementById("wr-complaints-table").innerHTML=comH;
+
+    /* (9) Complaint ratio */
+    const cr=(wkData&&wkData.complaint_ratio)||{{}};
+    function safePct(c,t){{ return t>0?((c/t)*100).toFixed(2)+"%":"—"; }}
+    let crH="";
+    crH+=`<tr><td>Số khiếu nại</td><td class="right">${{fmtCellNum((cr.shopee||{{}}).complaints)}}</td><td class="right">${{fmtCellNum((cr.tiktok||{{}}).complaints)}}</td><td class="right">${{fmtCellNum((cr.website||{{}}).complaints)}}</td><td class="right">${{fmtCellNum((cr.lazada||{{}}).complaints)}}</td></tr>`;
+    crH+=`<tr><td>Tổng đơn hàng</td><td class="right">${{fmtCellNum((cr.shopee||{{}}).total_orders)}}</td><td class="right">${{fmtCellNum((cr.tiktok||{{}}).total_orders)}}</td><td class="right">${{fmtCellNum((cr.website||{{}}).total_orders)}}</td><td class="right">${{fmtCellNum((cr.lazada||{{}}).total_orders)}}</td></tr>`;
+    crH+=`<tr style="background:var(--bg-section)"><td><b>Tỷ lệ KN / Tổng đơn</b></td><td class="right"><b>${{safePct((cr.shopee||{{}}).complaints,(cr.shopee||{{}}).total_orders)}}</b></td><td class="right"><b>${{safePct((cr.tiktok||{{}}).complaints,(cr.tiktok||{{}}).total_orders)}}</b></td><td class="right"><b>${{safePct((cr.website||{{}}).complaints,(cr.website||{{}}).total_orders)}}</b></td><td class="right"><b>${{safePct((cr.lazada||{{}}).complaints,(cr.lazada||{{}}).total_orders)}}</b></td></tr>`;
+    document.getElementById("wr-complaint-ratio-table").innerHTML=crH;
 }}
 
 /* ===== SP SEARCH ===== */
@@ -1396,7 +2155,6 @@ function aggregateSP(spName,start,end,platforms){{
             if(hasData)result.dates_with_sales++;
         }}
     }});
-    // Bo ngay khong co data
     Object.keys(result.by_date).forEach(d=>{{ if(result.by_date[d].qty===0&&result.by_date[d].revenue===0)delete result.by_date[d]; }});
     return result;
 }}
@@ -1521,8 +2279,29 @@ document.querySelectorAll(".tab-btn").forEach(b=>{{b.addEventListener("click",e=
     e.target.classList.add("active");
     if(tid==="tong-quan")overview();
     else if(tid==="lookup")lookup();
+    else if(tid==="weekly")renderWeekly();
     else platform(resolveKey(tid));
 }});}});
+
+/* Weekly report control handlers */
+document.querySelectorAll('#weekly .mode-btn[data-target="wr"]').forEach(b=>{{b.addEventListener("click",e=>{{
+    wrMode=e.target.dataset.mode;
+    document.querySelectorAll('#weekly .mode-btn[data-target="wr"]').forEach(t=>t.classList.remove("active"));
+    e.target.classList.add("active");
+    document.getElementById("wr-single-controls").style.display = wrMode==="single"?"":"none";
+    document.getElementById("wr-range-controls").style.display = wrMode==="range"?"":"none";
+    renderWeekly();
+}});}});
+document.querySelectorAll('#weekly .ch-pill[data-target="wr"]').forEach(b=>{{b.addEventListener("click",e=>{{
+    wrChannel=e.target.dataset.channel;
+    document.querySelectorAll('#weekly .ch-pill[data-target="wr"]').forEach(t=>t.classList.remove("active"));
+    e.target.classList.add("active");
+    renderWeekly();
+}});}});
+["wr-date","wr-start","wr-end"].forEach(id=>{{
+    const el=document.getElementById(id);
+    if(el)el.addEventListener("change",renderWeekly);
+}});
 
 /* Lookup tab event handlers - controls dau tab (data-target="main") */
 document.querySelectorAll('#lookup .mode-btn[data-target="main"]').forEach(b=>{{b.addEventListener("click",e=>{{
@@ -1646,16 +2425,16 @@ def _generate_platform_tabs():
 
 
 def main():
-    output_path = sys.argv[1] if len(sys.argv) > 1 else "/sessions/nice-funny-mccarthy/mnt/Tồn- xuất kho- hàng hóa/Dashboard_Loho_House_2026.html"
+    output_path = sys.argv[1] if len(sys.argv) > 1 else "/sessions/relaxed-laughing-hamilton/mnt/Loho_Dashboard/Dashboard_Loho_House_2026.html"
 
     print("=== Loho House Dashboard Updater v2 ===")
     print(f"Output: {output_path}")
     print()
 
-    print("📥 Downloading 8 sheets...")
+    print("Downloading 8 sheets...")
     csv_paths = {}
     for name, info in SHEETS.items():
-        print(f"  → {name} (gid={info['gid']})...", end=" ")
+        print(f"  -> {name} (gid={info['gid']})...", end=" ")
         path = download_csv(name, info["gid"])
         if path:
             csv_paths[name] = path
@@ -1664,7 +2443,7 @@ def main():
         else:
             print("FAILED")
 
-    print("\n📊 Processing revenue data...")
+    print("\nProcessing revenue data...")
     platforms_data = {}
     daily_data = {}
     for platform in ["shopee", "tiktok", "web", "lazada"]:
@@ -1680,7 +2459,7 @@ def main():
             print(f"  {platform} {mk}: {m['orders']} orders, revenue={int(m['revenue']):,}")
         print(f"  {platform} daily: {len(d_data)} dates")
 
-    print("\n🏷️  Processing categories...")
+    print("\nProcessing categories...")
     categories_data = {}
     daily_categories_data = {}
     for platform in ["shopee", "tiktok", "web", "lazada"]:
@@ -1697,25 +2476,29 @@ def main():
             c = cats[mk]
             print(f"  {platform} {mk}: san={c.get('san',0):,} son={c.get('son',0):,} congcu={c.get('congcu',0):,} decor={c.get('decor',0):,}")
 
-    # Enrich products from raw sheets for platforms with empty product names
-    print("\n📦 Enriching products from raw sheets...")
+    print("\nEnriching products from raw sheets...")
     for platform in ["web", "lazada"]:
         raw_name = platform + "_raw"
         if raw_name in csv_paths:
             enrich_products_from_raw(platform, csv_paths[raw_name], platforms_data, daily_data)
 
-    print("\n🔧 Building data JSON...")
+    print("\nBuilding data JSON...")
     data_json = build_data_json(platforms_data, categories_data)
     daily_json = build_daily_json(daily_data, daily_categories_data)
     products_json = build_products_index(daily_data)
     print(f"  Built products index: {len(products_json)} unique products")
 
-    print(f"\n📝 Generating HTML → {output_path}")
-    generate_html(data_json, daily_json, products_json, output_path)
+    print("\nLoading weekly report manual data...")
+    weekly_data = load_weekly_report_data()
+    n_weeks = len(weekly_data.get("weeks", {}))
+    print(f"  Loaded {n_weeks} week(s) of manual data")
+
+    print(f"\nGenerating HTML -> {output_path}")
+    generate_html(data_json, daily_json, products_json, output_path, weekly_data=weekly_data)
 
     file_size = os.path.getsize(output_path)
-    print(f"\n✅ Done! File size: {file_size:,} bytes")
-    print(f"📅 Updated: {(datetime.now(VN_TZ) if VN_TZ else datetime.now()).strftime('%d/%m/%Y %H:%M')}")
+    print(f"\nDone! File size: {file_size:,} bytes")
+    print(f"Updated: {(datetime.now(VN_TZ) if VN_TZ else datetime.now()).strftime('%d/%m/%Y %H:%M')}")
 
 
 if __name__ == "__main__":

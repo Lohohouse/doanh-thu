@@ -1,0 +1,106 @@
+{
+  "_comment": "File data nhập tay cho tab Báo Cáo Hàng Tuần. Cập nhật từng tuần. Số tiền dạng VND không có dấu phẩy.",
+  "current_week": "2026-W19",
+  "weeks": {
+    "2026-W19": {
+      "label": "Tuần 4/5 - 10/5/2026",
+      "settlement": {
+        "_note": "Doanh thu quyết toán (TikTok Shop trả về) so với doanh thu sàn hiển thị trên dashboard",
+        "shopee_settled": 0,
+        "tiktok_settled": 53615527,
+        "lazada_settled": 0,
+        "website_settled": 497000
+      },
+      "ads_weekly": {
+        "_note": "Chi phí quảng cáo theo tuần — Shopee và Tiktok",
+        "shopee": {
+          "prev_cost": 16700000,
+          "cost": 15600000,
+          "prev_revenue": 199100000,
+          "revenue": 124300000,
+          "prev_orders": 427,
+          "orders": 320,
+          "prev_products": 1400,
+          "products": 967
+        },
+        "tiktok": {
+          "prev_cost": 17047961,
+          "cost": 15331057,
+          "prev_revenue": 123145166,
+          "revenue": 94073479,
+          "prev_orders": 609,
+          "orders": 695,
+          "prev_products": null,
+          "products": null
+        }
+      },
+      "ads_monthly": {
+        "_note": "Chi phí quảng cáo theo tháng — so sánh tháng này / tháng cùng kỳ / tháng trước",
+        "shopee": {
+          "t_current_label": "T4.2026",
+          "t_current_cost": 63200000,
+          "t_current_revenue": 760300000,
+          "t_current_orders": 1400,
+          "t_current_products": 4800,
+          "t_prev_year_label": "T4 Cùng kỳ",
+          "t_prev_year_cost": 37800000,
+          "t_prev_year_revenue": 471100000,
+          "t_prev_year_orders": 887,
+          "t_prev_year_products": 3000,
+          "t_next_label": "T5.2026",
+          "t_next_cost": 42200000,
+          "t_next_revenue": 145500000,
+          "t_next_orders": 964,
+          "t_next_products": 3100
+        },
+        "tiktok": {
+          "t_current_label": "T4.2026",
+          "t_current_cost": 26554526,
+          "t_current_revenue": 204693036,
+          "t_current_orders": 1473,
+          "t_current_products": null,
+          "t_prev_year_label": "T4 Cùng kỳ",
+          "t_prev_year_cost": 19130212,
+          "t_prev_year_revenue": 143768701,
+          "t_prev_year_orders": 886,
+          "t_prev_year_products": null,
+          "t_next_label": "T5.2026",
+          "t_next_cost": 40684991,
+          "t_next_revenue": 284278238,
+          "t_next_orders": 1679,
+          "t_next_products": null
+        }
+      },
+      "ads_total_revenue": {
+        "_note": "Tổng doanh thu bán hàng (Sàn + QC) để tính tỷ lệ phí QC/Tổng DT",
+        "shopee_t4": 968300000,
+        "shopee_t5": 544207453,
+        "tiktok_t4": 455900000,
+        "tiktok_t5": 266250885
+      },
+      "customer_care": [
+        {"channel": "Shopee", "chats": 209, "conversion": 18.66, "revenue": 25205301},
+        {"channel": "Tiktok", "chats": 158, "conversion": 21.71, "revenue": 22061658},
+        {"channel": "Lazada", "chats": 1, "conversion": 0, "revenue": 0},
+        {"channel": "Zalo OA - Zalo shop", "chats": 12, "conversion": 0, "revenue": 986000}
+      ],
+      "reviews": [
+        {"channel": "Shopee", "rate5": 106, "rate3": 2, "rate1": 0, "reason": "(2s) Sự cố vận chuyển: đổ sơn\n(3s) không ghi rõ", "status": "Đang liên hệ"},
+        {"channel": "Tiktok", "rate5": 39, "rate3": 0, "rate1": 0, "reason": "", "status": ""},
+        {"channel": "Lazada", "rate5": null, "rate3": null, "rate1": 0, "reason": "/", "status": "/"}
+      ],
+      "complaints": [
+        {"channel": "Shopee", "total_month": 44, "this_week": 17, "resolved": 10, "pending": 3, "reason": "(11) Vận chuyển: đơn sàn nặng không giao hàng cho khách, giao chậm\n(3) Đóng gói thiếu\n(1) Gửi nhầm hàng\n(2) Sự cố vận chuyển"},
+        {"channel": "Tiktok", "total_month": 33, "this_week": 9, "resolved": 7, "pending": 2, "reason": "(7) Vận chuyển chậm, ĐVVC đi đơn ảo\n(1) Đóng gói thiếu\n(1) Sự cố vận chuyển (đổ sơn)"},
+        {"channel": "Lazada", "total_month": 0, "this_week": 0, "resolved": 0, "pending": 0, "reason": ""},
+        {"channel": "Website", "total_month": 0, "this_week": 0, "resolved": 0, "pending": 0, "reason": ""}
+      ],
+      "complaint_ratio": {
+        "shopee": {"complaints": 17, "total_orders": 1268},
+        "tiktok": {"complaints": 9, "total_orders": 1223},
+        "website": {"complaints": 0, "total_orders": 3},
+        "lazada": {"complaints": 0, "total_orders": 0}
+      }
+    }
+  }
+}
