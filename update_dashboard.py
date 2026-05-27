@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "0"
+WEEKLY_SHEET_GID = "1792982691"  # gid của sheet "BAO CAO TUAN"
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -222,37 +222,49 @@ def _parse_weekly_csv(csv_text):
         },
     }
 
-    # === ADS MONTHLY === Sections 3 (shopee) and 4 (tiktok) — B=Tháng này, C=Cùng kỳ, D=Tháng sau
+    # === ADS MONTHLY === Sections 3 (shopee) and 4 (tiktok)
+    # Column mapping (NEW format):
+    #   B = Tháng trước (previous month) -- stored in t_next_* (legacy field name kept for compat)
+    #   C = Cùng kỳ (same period last year) -- stored in t_prev_year_*
+    #   D = Tháng này (current month) -- stored in t_current_*
+    # Dashboard JS displays: "T này" reads t_current_*, "Cùng Kỳ" reads t_prev_year_*, "T trước" reads t_next_*
     def parse_monthly(sec):
         cp = get_row(sec, "chi phi qc thang", "chi phi qc", "chi phi quang cao")
         ds = get_row(sec, "doanh so qc thang", "doanh so qc", "doanh so quang cao")
         dh = get_row(sec, "so don hang thang", "don hang thang", "so don hang")
         sp = get_row(sec, "so sp ban thang", "sp ban thang", "san pham ban")
         td = get_row(sec, "tong doanh thu ban hang", "tong doanh thu")
+        # Column header labels (from "Chỉ tiêu" subhead row) — for dynamic display
+        # We find them by scanning rows in this section for a row labeled "chi tieu"
+        col_labels = ["", "", "", ""]
+        for norm_l, orig_l, cols in rows_by_section.get(sec, []):
+            if norm_l == "chi tieu":
+                col_labels = cols
+                break
         return {
-            "t_current_label":     "Tháng này",
-            "t_prev_year_label":   "Cùng kỳ",
-            "t_next_label":        "Tháng sau",
-            "t_current_cost":      num_or_none(cp[0]),
-            "t_prev_year_cost":    num_or_none(cp[1]),
-            "t_next_cost":         num_or_none(cp[2]),
-            "t_current_revenue":   num_or_none(ds[0]),
-            "t_prev_year_revenue": num_or_none(ds[1]),
-            "t_next_revenue":      num_or_none(ds[2]),
-            "t_current_orders":    num_or_none(dh[0]),
-            "t_prev_year_orders":  num_or_none(dh[1]),
-            "t_next_orders":       num_or_none(dh[2]),
-            "t_current_products":  num_or_none(sp[0]),
-            "t_prev_year_products":num_or_none(sp[1]),
-            "t_next_products":     num_or_none(sp[2]),
-            "t_current_total_rev": num_or_none(td[0]),
-            "t_next_total_rev":    num_or_none(td[2]),
+            "t_current_label":      s(col_labels[2]) or "Tháng này",
+            "t_prev_year_label":    s(col_labels[1]) or "Cùng kỳ",
+            "t_next_label":         s(col_labels[0]) or "Tháng trước",
+            "t_current_cost":       num_or_none(cp[2]),  # D = current month
+            "t_prev_year_cost":     num_or_none(cp[1]),  # C = prev year same period
+            "t_next_cost":          num_or_none(cp[0]),  # B = previous month
+            "t_current_revenue":    num_or_none(ds[2]),
+            "t_prev_year_revenue":  num_or_none(ds[1]),
+            "t_next_revenue":       num_or_none(ds[0]),
+            "t_current_orders":     num_or_none(dh[2]),
+            "t_prev_year_orders":   num_or_none(dh[1]),
+            "t_next_orders":        num_or_none(dh[0]),
+            "t_current_products":   num_or_none(sp[2]),
+            "t_prev_year_products": num_or_none(sp[1]),
+            "t_next_products":      num_or_none(sp[0]),
+            "t_current_total_rev":  num_or_none(td[2]),
+            "t_next_total_rev":     num_or_none(td[0]),
         }
     ads_monthly_sh = parse_monthly("ads_monthly_shopee")
     ads_monthly_tk = parse_monthly("ads_monthly_tiktok")
     ads_monthly = {"shopee": ads_monthly_sh, "tiktok": ads_monthly_tk}
 
-    # === TONG_DT === (Pulled from monthly sections row "Tổng doanh thu bán hàng")
+    # === TONG_DT === (legacy field names: _t4 = current month, _t5 = previous month)
     ads_total_revenue = {
         "shopee_t4": ads_monthly_sh.get("t_current_total_rev") or 0,
         "shopee_t5": ads_monthly_sh.get("t_next_total_rev") or 0,
@@ -1401,10 +1413,10 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                             <th>項目 Kênh bán</th>
                             <th class="right">Shopee T này</th>
                             <th class="right">Shopee Cùng Kỳ</th>
-                            <th class="right">Shopee T sau</th>
+                            <th class="right">Shopee T trước</th>
                             <th class="right">Tiktok T này</th>
                             <th class="right">Tiktok Cùng Kỳ</th>
-                            <th class="right">Tiktok T sau</th>
+                            <th class="right">Tiktok T trước</th>
                         </tr>
                     </thead>
                     <tbody id="wr-ads-monthly-table"></tbody>
@@ -1418,9 +1430,9 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                         <tr>
                             <th>項目 Chỉ số</th>
                             <th class="right">Shopee T này</th>
-                            <th class="right">Shopee T sau</th>
+                            <th class="right">Shopee T trước</th>
                             <th class="right">Tiktok T này</th>
-                            <th class="right">Tiktok T sau</th>
+                            <th class="right">Tiktok T trước</th>
                         </tr>
                     </thead>
                     <tbody id="wr-ads-ratio-table"></tbody>
