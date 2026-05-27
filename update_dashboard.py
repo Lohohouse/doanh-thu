@@ -110,21 +110,45 @@ def _parse_weekly_csv(csv_text):
 
     Parser tracks current section based on header rows containing ①/②/③/...
     """
-    def num(v):
-        if v is None: return 0
-        v = str(v).strip()
-        if not v or v in ("—", "-", "/", "N/A"): return 0
-        v = v.replace(",", "").replace(" ", "").replace("đ", "").replace("%", "")
-        try: return float(v)
-        except: return 0
-
-    def num_or_none(v):
+    def _parse_vn_number(v):
+        """Parse Vietnamese-formatted numbers.
+        VN format: '126.243.364' = 126 million (dot = thousand separator)
+                   '18,66' = 18.66 (comma = decimal)
+                   '18,66%' = 18.66
+        Falls back to standard parsing if format ambiguous."""
         if v is None: return None
         v = str(v).strip()
-        if not v or v in ("—", "-", "/", "N/A"): return None
-        v = v.replace(",", "").replace(" ", "").replace("đ", "").replace("%", "")
+        if not v or v in ("—", "-", "/", "N/A", "—\xa0"): return None
+        # Strip non-numeric noise
+        v = v.replace(" ", "").replace("đ", "").replace("%", "").replace("\xa0", "")
+        if not v: return None
+        # Detect VN format: multiple dots OR (1 dot + numeric block of 3 digits after it) → thousand separators
+        n_dots = v.count(".")
+        n_commas = v.count(",")
+        if n_commas == 0 and n_dots >= 1:
+            # Likely VN thousand separator: 126.243.364, or 117.000
+            # Heuristic: if any dot-separated block (except possibly first) has exactly 3 digits → VN format
+            parts = v.split(".")
+            if all(len(p) == 3 for p in parts[1:]) and parts[0].lstrip("-").isdigit():
+                v = v.replace(".", "")
+        elif n_commas >= 1 and n_dots >= 1:
+            # Mixed format. Assume EU/VN style: dot=thousand, comma=decimal
+            v = v.replace(".", "").replace(",", ".")
+        elif n_commas == 1 and n_dots == 0:
+            # VN decimal: 18,66 → 18.66
+            v = v.replace(",", ".")
+        elif n_commas > 1:
+            # US style thousands: 1,234,567
+            v = v.replace(",", "")
         try: return float(v)
         except: return None
+
+    def num(v):
+        r = _parse_vn_number(v)
+        return r if r is not None else 0
+
+    def num_or_none(v):
+        return _parse_vn_number(v)
 
     def s(v):
         return (str(v) if v is not None else "").strip()
