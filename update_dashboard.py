@@ -208,6 +208,22 @@ def _parse_weekly_csv(csv_text):
     # === META ===
     label = s(get_row("meta", "ten tuan")[0]) or "Tuần hiện tại"
     code = s(get_row("meta", "ma tuan")[0]) or "2026-W00"
+    start_date = s(get_row("meta", "ngay bat dau")[0])
+    end_date = s(get_row("meta", "ngay ket thuc")[0])
+    # Normalize date format to YYYY-MM-DD if it's something else
+    def _norm_date(d):
+        if not d: return ""
+        d = d.strip()
+        # Try common formats
+        import re as _re
+        if _re.match(r"^\d{4}-\d{2}-\d{2}$", d): return d
+        m = _re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", d)
+        if m: return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+        m = _re.match(r"^(\d{4})/(\d{1,2})/(\d{1,2})$", d)
+        if m: return f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"
+        return d
+    start_date = _norm_date(start_date)
+    end_date = _norm_date(end_date)
 
     # === SETTLEMENT ===
     set_row = get_row("settlement", "doanh thu quyet toan", "quyet toan")
@@ -365,6 +381,8 @@ def _parse_weekly_csv(csv_text):
         "weeks": {
             code: {
                 "label": label,
+                "start_date": start_date,
+                "end_date": end_date,
                 "settlement": settlement,
                 "ads_weekly": ads_weekly,
                 "ads_monthly": ads_monthly,
@@ -747,7 +765,9 @@ def process_platform(name, csv_path):
     return monthly, daily_full
 
 
-def process_raw_for_categories(platform, csv_path, monthly_revenue):
+def process_raw_for_categories(platform, csv_path, monthly_revenue, name_to_sku=None):
+    """name_to_sku: optional dict (canon_name -> sku) accumulated across all platforms.
+    Caller passes a shared dict and we fill it in. First SKU seen for a name wins."""
     raw_name = platform + "_raw"
     col_map = RAW_COLS[raw_name]
     rows = read_csv(csv_path)
@@ -795,6 +815,12 @@ def process_raw_for_categories(platform, csv_path, monthly_revenue):
         cat_totals[key][cat] += price
         if full_date:
             cat_totals_daily[full_date][cat] += price
+
+        # Track first SKU seen per canonical name (used for grouping in JS)
+        if name_to_sku is not None and product and sku:
+            canon = canonicalize_product_name(product.strip())
+            if canon and canon not in name_to_sku:
+                name_to_sku[canon] = sku.strip()
 
     # Normalize monthly
     result = {}
@@ -1012,7 +1038,7 @@ def get_available_months(data):
     return sorted(months, key=lambda x: int(x[1:]))
 
 
-def generate_html(data_json, daily_json, products_json, output_path, weekly_data=None):
+def generate_html(data_json, daily_json, products_json, output_path, weekly_data=None, sku_by_name=None):
     today = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M") if VN_TZ else datetime.now().strftime("%d/%m/%Y %H:%M")
     months = get_available_months(data_json)
     last_month = months[-1] if months else "T1"
@@ -1020,6 +1046,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     daily_str = json.dumps(daily_json, ensure_ascii=False)
     products_str = json.dumps(products_json, ensure_ascii=False)
     weekly_str = json.dumps(weekly_data or {"current_week": "", "weeks": {}}, ensure_ascii=False)
+    sku_by_name_str = json.dumps(sku_by_name or {}, ensure_ascii=False)
     trend_labels = json.dumps(months)
     # Find latest date with data for default
     all_dates = set()
@@ -1410,7 +1437,26 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </div>
             </div>
 
-            <div class="section-title">③ 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
+            <div class="section-title">③ 暢銷產品組 Top 5 Nhóm SP Bán Chạy (Tuần &amp; Tháng)</div>
+            <div class="wr-meta">Đã gộp các sản phẩm tương tự (Sàn nhựa dán keo: COMBO 5m² + COMBO 1m² + lẻ tấm · Sơn tường 1kg: gộp các tone màu · Mẫu thử 50ml: gộp các màu). Các SP còn lại giữ nguyên.</div>
+            <div class="wr-grid-2">
+                <div class="table-container" style="height:auto;">
+                    <div class="chart-title">📦 Top 5 nhóm SP trong tuần (kỳ đã chọn) <span class="wr-pill" id="wr-group-week-meta"></span></div>
+                    <table>
+                        <thead><tr><th>#</th><th>Nhóm SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th>So với cùng kỳ tuần trước</th></tr></thead>
+                        <tbody id="wr-group-week-table"></tbody>
+                    </table>
+                </div>
+                <div class="table-container" style="height:auto;">
+                    <div class="chart-title">📦 Top 5 nhóm SP trong tháng <span class="wr-pill" id="wr-group-month-meta"></span></div>
+                    <table>
+                        <thead><tr><th>#</th><th>Nhóm SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th>So với tháng trước</th></tr></thead>
+                        <tbody id="wr-group-month-table"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section-title">④ 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
             <div class="table-container">
                 <div class="wr-meta">Số liệu nhập tay từ file <code>weekly_report_data.json</code> — Tuần đang xem: <b id="wr-ad-week-label">—</b></div>
                 <table>
@@ -1429,7 +1475,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">④ 廣告費用月報 Chi Phí Quảng Cáo Theo Tháng</div>
+            <div class="section-title">⑤ 廣告費用月報 Chi Phí Quảng Cáo Theo Tháng</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1447,7 +1493,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑤ 廣告費用占比 Tỷ Lệ Phí QC / Doanh Thu</div>
+            <div class="section-title">⑥ 廣告費用占比 Tỷ Lệ Phí QC / Doanh Thu</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1463,7 +1509,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑥ 客戶關懷 Chăm Sóc Khách Hàng (Theo Tuần)</div>
+            <div class="section-title">⑦ 客戶關懷 Chăm Sóc Khách Hàng (Theo Tuần)</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1478,7 +1524,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑦ 客戶評價 Đánh Giá Khách Hàng</div>
+            <div class="section-title">⑧ 客戶評價 Đánh Giá Khách Hàng</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1495,7 +1541,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑧ 投訴處理 Xử Lý Khiếu Nại</div>
+            <div class="section-title">⑨ 投訴處理 Xử Lý Khiếu Nại</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1512,7 +1558,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑨ 投訴占比 Tỷ Lệ Đơn Khiếu Nại / Tổng Đơn</div>
+            <div class="section-title">⑩ 投訴占比 Tỷ Lệ Đơn Khiếu Nại / Tổng Đơn</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1552,6 +1598,7 @@ let currentMonth="{last_month}",charts={{}};
 const DD={daily_str};
 const PRODUCTS={products_str};
 const WEEKLY={weekly_str};
+const SKU_BY_NAME={sku_by_name_str};
 const lookupFirstDate="{first_date}";
 const lookupLastDate="{last_date}";
 let lookupMode="single";
@@ -1987,16 +2034,21 @@ function renderWeekly(){{
     const prevPeriodLabel=(ws===we)?fmtDate(ws):`${{fmtDate(ws)}} → ${{fmtDate(we)}}`;
     const chLabel=wrChannel==="all"?"tất cả kênh":platformNames[wrChannel];
     document.getElementById("wr-compare-info").innerHTML=`Kỳ này: <b>${{periodLabel}}</b> | Tuần trước: ${{prevPeriodLabel}} | Kênh: <b>${{chLabel}}</b>`;
-    document.getElementById("wr-revenue-meta").innerHTML=`Kỳ đang xem: <b>${{periodLabel}}</b> — Số liệu sàn lấy từ dashboard tự động; số liệu quyết toán nhập tay`;
 
-    /* (1) Doanh thu sàn vs quyết toán */
+    /* (1) Doanh thu sàn vs quyết toán — ALWAYS use META week range, not date picker */
     const wkData=getCurrentWeekData();
+    const wkStart=(wkData&&wkData.start_date)||s;
+    const wkEnd=(wkData&&wkData.end_date)||e;
+    const wkAgg=aggLookup(wkStart,wkEnd,["shopee","tiktok","web","lazada"]);
+    const wkLabel=(wkData&&wkData.label)||"Tuần hiện tại";
+    document.getElementById("wr-revenue-meta").innerHTML=`<b>${{wkLabel}}</b> (${{fmtDate(wkStart)}} → ${{fmtDate(wkEnd)}}) — "Doanh thu từ sàn" tự động tổng hợp; "Doanh thu quyết toán" nhập tay`;
+
     const settlement=(wkData&&wkData.settlement)||{{}};
     const settMap={{shopee:settlement.shopee_settled||0,tiktok:settlement.tiktok_settled||0,lazada:settlement.lazada_settled||0,web:settlement.website_settled||0}};
     let revHtml="";
     let totRev=0,totSet=0;
     ["shopee","tiktok","lazada","web"].forEach(p=>{{
-        const r=cur.byChannel[p]||0;
+        const r=wkAgg.byChannel[p]||0;  // ← from week range, not date picker
         const st=settMap[p]||0;
         const diff=r-st;
         const pct=r>0?((st/r)*100).toFixed(1)+"%":"—";
@@ -2060,6 +2112,78 @@ function renderWeekly(){{
     if(!tmH)tmH='<tr><td colspan="5" class="wr-empty">Không có data SP cho tháng</td></tr>';
     document.getElementById("wr-top-month-table").innerHTML=tmH;
     document.getElementById("wr-top-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
+
+    /* (2b) Top 5 NHÓM SP - gộp theo quy tắc Loho House */
+    function _norm(s){{
+        return (s||"").toString().toLowerCase()
+            .normalize("NFD").replace(/[̀-ͯ]/g,"")
+            .replace(/đ/g,"d")
+            .replace(/\s+/g," ").trim();
+    }}
+    function groupKeyOf(name){{
+        // Ưu tiên dùng SKU (chính xác hơn tên SP có thể có nhiều cách viết)
+        const sku=((SKU_BY_NAME&&SKU_BY_NAME[name])||"").toUpperCase();
+        // Sơn tường 1kg các tone màu: L-SM-*-01* (P/D/A)
+        if(/^L-SM-.*-01[A-Z0-9]?$/.test(sku)){{
+            return "Sơn tường 1kg (gộp các tone màu)";
+        }}
+        // Mẫu thử 50ml các màu: L-MZ-*-50*
+        if(/^L-MZ-.*-50[A-Z0-9]?$/.test(sku)){{
+            return "Mẫu thử 50ml (gộp các màu)";
+        }}
+        // Sàn nhựa giả gỗ dán keo (combo 5m² + 1m² + lẻ tấm): L-LS-DK-* hoặc LS-DK-*
+        if(/^(L-)?LS-DK-/.test(sku)){{
+            return "Sàn Nhựa Giả Gỗ Dán Keo (gộp combo + lẻ tấm)";
+        }}
+
+        // Fallback theo tên nếu không có SKU (vd: web/lazada thiếu SKU)
+        const n=_norm(name);
+        if((n.includes("mau thu")||n.includes("sample")||n.includes("minisize")||n.includes("trai nghiem"))&&(n.includes("50ml")||n.includes("50 ml"))){{
+            return "Mẫu thử 50ml (gộp các màu)";
+        }}
+        if(n.includes("son")&&(n.includes("1kg")||n.includes("1 kg"))&&!n.includes("lot")){{
+            return "Sơn tường 1kg (gộp các tone màu)";
+        }}
+        if((n.includes("san nhua")||n.includes("san gia go")||n.includes("san go"))&&(n.includes("dan keo")||n.includes("keo dan"))){{
+            return "Sàn Nhựa Giả Gỗ Dán Keo (gộp combo + lẻ tấm)";
+        }}
+        return name;
+    }}
+    function groupMap(srcMap){{
+        const out={{}};
+        Object.keys(srcMap||{{}}).forEach(name=>{{
+            const k=groupKeyOf(name);
+            if(!out[k])out[k]={{qty:0,revenue:0}};
+            out[k].qty+=srcMap[name].qty||0;
+            out[k].revenue+=srcMap[name].revenue||0;
+        }});
+        return out;
+    }}
+    const groupWeek=groupMap(prodMap);
+    const groupWeekPrev=groupMap(prevProdMap);
+    const topGroupWeek=Object.entries(groupWeek).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,5);
+    let gwH="";
+    topGroupWeek.forEach(([name,v],i)=>{{
+        const prev=groupWeekPrev[name];
+        const prevRev=prev?prev.revenue:0;
+        gwH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
+    }});
+    if(!gwH)gwH='<tr><td colspan="5" class="wr-empty">Không có data nhóm SP trong khoảng đã chọn</td></tr>';
+    document.getElementById("wr-group-week-table").innerHTML=gwH;
+    document.getElementById("wr-group-week-meta").textContent=periodLabel;
+
+    const groupMonth=groupMap(monthData.products);
+    const groupMonthPrev=groupMap(prevMonthData.products||{{}});
+    const topGroupMonth=Object.entries(groupMonth).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,5);
+    let gmH="";
+    topGroupMonth.forEach(([name,v],i)=>{{
+        const prev=groupMonthPrev[name];
+        const prevRev=prev?prev.revenue:0;
+        gmH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
+    }});
+    if(!gmH)gmH='<tr><td colspan="5" class="wr-empty">Không có data nhóm SP cho tháng</td></tr>';
+    document.getElementById("wr-group-month-table").innerHTML=gmH;
+    document.getElementById("wr-group-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
 
     /* (3) Ads weekly */
     document.getElementById("wr-ad-week-label").textContent=wkData?wkData.label||"—":"Chưa có data";
@@ -2498,6 +2622,7 @@ def main():
     print("\nProcessing categories...")
     categories_data = {}
     daily_categories_data = {}
+    sku_by_name = {}  # canon_name -> first SKU seen across all platforms (for JS grouping)
     for platform in ["shopee", "tiktok", "web", "lazada"]:
         raw_name = platform + "_raw"
         if raw_name not in csv_paths:
@@ -2505,7 +2630,7 @@ def main():
             daily_categories_data[platform] = {}
             continue
         monthly_rev = {k: v["revenue"] for k, v in platforms_data[platform].items()}
-        cats, cats_daily = process_raw_for_categories(platform, csv_paths[raw_name], monthly_rev)
+        cats, cats_daily = process_raw_for_categories(platform, csv_paths[raw_name], monthly_rev, name_to_sku=sku_by_name)
         categories_data[platform] = cats
         daily_categories_data[platform] = cats_daily
         for mk in sorted(cats.keys(), key=lambda x: int(x[1:])):
@@ -2529,8 +2654,10 @@ def main():
     n_weeks = len(weekly_data.get("weeks", {}))
     print(f"  Loaded {n_weeks} week(s) of manual data")
 
+    print(f"  Built SKU lookup: {len(sku_by_name)} name→SKU entries")
+
     print(f"\nGenerating HTML -> {output_path}")
-    generate_html(data_json, daily_json, products_json, output_path, weekly_data=weekly_data)
+    generate_html(data_json, daily_json, products_json, output_path, weekly_data=weekly_data, sku_by_name=sku_by_name)
 
     file_size = os.path.getsize(output_path)
     print(f"\nDone! File size: {file_size:,} bytes")
