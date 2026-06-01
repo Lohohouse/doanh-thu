@@ -225,13 +225,37 @@ def _parse_weekly_csv(csv_text):
     start_date = _norm_date(start_date)
     end_date = _norm_date(end_date)
 
-    # === SETTLEMENT ===
-    set_row = get_row("settlement", "doanh thu quyet toan", "quyet toan")
+    # === SETTLEMENT (per channel: Xuất kho / Từ sàn / Quyết toán / Tổng phí / Tỷ lệ) ===
+    set_row    = get_row("settlement", "doanh thu quyet toan", "quyet toan")
+    xk_row     = get_row("settlement", "doanh thu file xuat kho", "xuat kho", "file xuat kho")
+    san_row    = get_row("settlement", "doanh thu tu san", "tu san", "doanh thu san")
+    fees_row   = get_row("settlement", "tong phi", "tổng phí", "phi tong")
+    ratio_row  = get_row("settlement", "ty le chi phi", "ti le chi phi", "ty le")
     settlement = {
         "shopee_settled":  num(set_row[0]),
         "tiktok_settled":  num(set_row[1]),
         "lazada_settled":  num(set_row[2]),
         "website_settled": num(set_row[3]),
+        # Doanh thu File Xuất kho - nhập tay trong sheet
+        "shopee_xuatkho":  num_or_none(xk_row[0]),
+        "tiktok_xuatkho":  num_or_none(xk_row[1]),
+        "lazada_xuatkho":  num_or_none(xk_row[2]),
+        "website_xuatkho": num_or_none(xk_row[3]),
+        # Doanh thu từ sàn - nhập tay (override) trong sheet
+        "shopee_tusan":    num_or_none(san_row[0]),
+        "tiktok_tusan":    num_or_none(san_row[1]),
+        "lazada_tusan":    num_or_none(san_row[2]),
+        "website_tusan":   num_or_none(san_row[3]),
+        # Tổng phí - dùng cho expandable breakdown
+        "shopee_fees":     num_or_none(fees_row[0]),
+        "tiktok_fees":     num_or_none(fees_row[1]),
+        "lazada_fees":     num_or_none(fees_row[2]),
+        "website_fees":    num_or_none(fees_row[3]),
+        # Tỷ lệ chi phí / doanh thu (text "28,70%")
+        "shopee_fee_pct":  (ratio_row[0] or "").strip() if ratio_row[0] else None,
+        "tiktok_fee_pct":  (ratio_row[1] or "").strip() if ratio_row[1] else None,
+        "lazada_fee_pct":  (ratio_row[2] or "").strip() if ratio_row[2] else None,
+        "website_fee_pct": (ratio_row[3] or "").strip() if ratio_row[3] else None,
     }
 
     # === ADS WEEKLY === B=Shopee prev, C=Shopee cur, D=Tiktok prev, E=Tiktok cur
@@ -849,24 +873,33 @@ def process_raw_for_categories(platform, csv_path, monthly_revenue, name_to_sku=
     return result, result_daily
 
 
-def enrich_products_from_raw(platform, csv_path, platforms_data, daily_data):
-    """When processed sheet has empty product names (web, lazada), enrich from raw sheet.
-    Also enriches daily_data[platform][full_date]['products'] with the raw product names."""
+def enrich_products_from_raw(platform, csv_path, platforms_data, daily_data, force_rebuild=False):
+    """Build per-product statistics from raw sheets.
+    Raw sheets có 1 dòng per (order, SKU) → đếm chính xác per-product, kể cả đơn nhiều SP.
+    force_rebuild=True: XÓA products từ processed sheet và rebuild hoàn toàn từ raw (chuẩn cho Top SP).
+    force_rebuild=False (legacy): chỉ fill khi processed sheet trống (cho enrichment có chọn lọc).
+
+    Lưu ý price column:
+      - Shopee col 44, TikTok col 31, Lazada col 55: TOTAL của dòng (đã = unit * qty)
+      - Web col 27: UNIT price → cần nhân với qty
+    """
     raw_name = platform + "_raw"
     col_map = RAW_COLS[raw_name]
     rows = read_csv(csv_path)
 
     monthly = platforms_data[platform]
     daily_full = daily_data.get(platform, {})
-    # Check if products are empty
-    needs_enrichment = any(
-        len(monthly[mk]["products"]) == 0
-        for mk in monthly
-    )
-    if not needs_enrichment:
-        return
 
-    print(f"  ℹ️  Enriching {platform} products from raw sheet...")
+    if not force_rebuild:
+        needs_enrichment = any(
+            len(monthly[mk]["products"]) == 0
+            for mk in monthly
+        )
+        if not needs_enrichment:
+            return
+
+    action = "Rebuilding" if force_rebuild else "Enriching"
+    print(f"  ℹ️  {action} {platform} products from raw sheet...")
 
     raw_products = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "revenue": 0}))
     raw_products_daily = defaultdict(lambda: defaultdict(lambda: {"qty": 0, "revenue": 0}))
@@ -907,35 +940,49 @@ def enrich_products_from_raw(platform, csv_path, platforms_data, daily_data):
         if qty <= 0:
             qty = 1
 
+        # Web col 27 là UNIT price → nhân qty. Shopee/TikTok/Lazada price đã là line total.
+        line_revenue = price * qty if platform == "web" else price
+
         raw_products[key][product]["qty"] += qty
-        raw_products[key][product]["revenue"] += price
+        raw_products[key][product]["revenue"] += line_revenue
         if full_date:
             raw_products_daily[full_date][product]["qty"] += qty
-            raw_products_daily[full_date][product]["revenue"] += price
+            raw_products_daily[full_date][product]["revenue"] += line_revenue
 
-    # Fill in missing products (monthly)
+    # Monthly: nếu force_rebuild thì XÓA toàn bộ products cũ rồi fill lại
     for mk in monthly:
-        if len(monthly[mk]["products"]) == 0 and mk in raw_products:
-            # Normalize revenue to match actual
-            actual_rev = monthly[mk]["revenue"]
-            raw_total = sum(v["revenue"] for v in raw_products[mk].values())
-            ratio = actual_rev / raw_total if raw_total > 0 else 1
+        if mk not in raw_products:
+            continue
+        if force_rebuild:
+            monthly[mk]["products"] = defaultdict(int)
+            monthly[mk]["product_revenue"] = defaultdict(float)
+        elif len(monthly[mk]["products"]) > 0:
+            continue
+        # Normalize revenue to match actual order-level revenue
+        actual_rev = monthly[mk]["revenue"]
+        raw_total = sum(v["revenue"] for v in raw_products[mk].values())
+        ratio = actual_rev / raw_total if raw_total > 0 else 1
+        for pname, pdata in raw_products[mk].items():
+            canon = canonicalize_product_name(pname)
+            monthly[mk]["products"][canon] = monthly[mk]["products"].get(canon, 0) + pdata["qty"]
+            monthly[mk]["product_revenue"][canon] = monthly[mk]["product_revenue"].get(canon, 0) + pdata["revenue"] * ratio
 
-            for pname, pdata in raw_products[mk].items():
-                canon = canonicalize_product_name(pname)
-                monthly[mk]["products"][canon] = monthly[mk]["products"].get(canon, 0) + pdata["qty"]
-                monthly[mk]["product_revenue"][canon] = monthly[mk]["product_revenue"].get(canon, 0) + pdata["revenue"] * ratio
-
-    # Fill in missing products (daily_full)
+    # Daily: tương tự
     for fd in list(daily_full.keys()):
-        if len(daily_full[fd].get("products", {})) == 0 and fd in raw_products_daily:
-            actual_rev = daily_full[fd]["revenue"]
-            raw_total = sum(v["revenue"] for v in raw_products_daily[fd].values())
-            ratio = actual_rev / raw_total if raw_total > 0 else 1
-            for pname, pdata in raw_products_daily[fd].items():
-                canon = canonicalize_product_name(pname)
-                daily_full[fd]["products"][canon] = daily_full[fd]["products"].get(canon, 0) + pdata["qty"]
-                daily_full[fd]["product_revenue"][canon] = daily_full[fd]["product_revenue"].get(canon, 0) + pdata["revenue"] * ratio
+        if fd not in raw_products_daily:
+            continue
+        if force_rebuild:
+            daily_full[fd]["products"] = defaultdict(int)
+            daily_full[fd]["product_revenue"] = defaultdict(float)
+        elif len(daily_full[fd].get("products", {})) > 0:
+            continue
+        actual_rev = daily_full[fd]["revenue"]
+        raw_total = sum(v["revenue"] for v in raw_products_daily[fd].values())
+        ratio = actual_rev / raw_total if raw_total > 0 else 1
+        for pname, pdata in raw_products_daily[fd].items():
+            canon = canonicalize_product_name(pname)
+            daily_full[fd]["products"][canon] = daily_full[fd]["products"].get(canon, 0) + pdata["qty"]
+            daily_full[fd]["product_revenue"][canon] = daily_full[fd]["product_revenue"].get(canon, 0) + pdata["revenue"] * ratio
 
 
 def build_data_json(platforms_data, categories_data):
@@ -1173,6 +1220,9 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         .wr-section-title {{ font-size: 1.1em; font-weight: 700; color: var(--text-dark); margin-bottom: 18px; padding-bottom: 10px; border-bottom: 2px solid var(--accent); display: inline-block; letter-spacing: 0.3px; }}
         .wr-meta {{ font-size: 0.85em; color: var(--text-mid); margin-bottom: 14px; font-style: italic; }}
         .wr-grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
+        .hidden {{ display: none; }}
+        .wr-fee-detail td {{ animation: fadeIn 0.2s ease; }}
+        @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(-4px); }} to {{ opacity: 1; transform: translateY(0); }} }}
         .wr-pill {{ display: inline-block; padding: 4px 10px; border-radius: 10px; font-size: 0.8em; font-weight: 600; background: var(--bg-section); color: var(--primary-dark); margin-left: 6px; }}
         .wr-empty {{ text-align: center; padding: 24px; color: var(--text-soft); font-style: italic; background: var(--bg-soft); border-radius: 10px; }}
         @media (max-width: 768px) {{
@@ -1402,21 +1452,23 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 <div class="compare-info" id="wr-compare-info"></div>
             </div>
 
-            <div class="section-title">① 營收總覽 Doanh Thu (Dashboard thống kê &amp; Quyết toán)</div>
+            <div class="section-title">① 營收總覽 Doanh Thu (Xuất kho · Sàn · Quyết toán)</div>
             <div class="table-container">
                 <div class="wr-meta" id="wr-revenue-meta"></div>
                 <table>
                     <thead>
                         <tr>
                             <th>通路 Kênh</th>
+                            <th class="right">出庫 DT File Xuất kho</th>
                             <th class="right">營收 Doanh thu từ sàn</th>
-                            <th class="right">結算 Doanh thu quyết toán</th>
+                            <th class="right">結算 DT Quyết toán <span class="wr-pill" title="Bấm để xem chi tiết phí">▼</span></th>
                             <th class="right">差額 Chênh lệch</th>
                             <th class="right">結算率 % Quyết toán</th>
                         </tr>
                     </thead>
                     <tbody id="wr-revenue-table"></tbody>
                 </table>
+                <div class="wr-meta" style="font-size:0.85em;color:var(--text-soft);margin-top:8px;">💡 Bấm vào ô <b>Doanh thu Quyết toán</b> của 1 kênh để xem chi tiết phí (Tổng phí, Tỷ lệ chi phí / Doanh thu).</div>
             </div>
 
             <div class="section-title">② 暢銷產品 Top 10 SP Bán Chạy (Tuần &amp; Tháng)</div>
@@ -2041,22 +2093,59 @@ function renderWeekly(){{
     const wkEnd=(wkData&&wkData.end_date)||e;
     const wkAgg=aggLookup(wkStart,wkEnd,["shopee","tiktok","web","lazada"]);
     const wkLabel=(wkData&&wkData.label)||"Tuần hiện tại";
-    document.getElementById("wr-revenue-meta").innerHTML=`<b>${{wkLabel}}</b> (${{fmtDate(wkStart)}} → ${{fmtDate(wkEnd)}}) — "Doanh thu từ sàn" tự động tổng hợp; "Doanh thu quyết toán" nhập tay`;
+    document.getElementById("wr-revenue-meta").innerHTML=`<b>${{wkLabel}}</b> (${{fmtDate(wkStart)}} → ${{fmtDate(wkEnd)}}) — "DT File Xuất kho" tự động tổng hợp từ dashboard; "DT Từ sàn" và "DT Quyết toán" nhập tay từ Google Sheet`;
 
     const settlement=(wkData&&wkData.settlement)||{{}};
-    const settMap={{shopee:settlement.shopee_settled||0,tiktok:settlement.tiktok_settled||0,lazada:settlement.lazada_settled||0,web:settlement.website_settled||0}};
+    const settMap ={{shopee:settlement.shopee_settled||0,tiktok:settlement.tiktok_settled||0,lazada:settlement.lazada_settled||0,web:settlement.website_settled||0}};
+    // "Doanh thu từ sàn" = giá trị nhập tay từ weekly sheet (Shopee/TikTok/Lazada/Web seller center báo về)
+    const tusanMap={{shopee:settlement.shopee_tusan,tiktok:settlement.tiktok_tusan,lazada:settlement.lazada_tusan,web:settlement.website_tusan}};
+    const feesMap ={{shopee:settlement.shopee_fees,tiktok:settlement.tiktok_fees,lazada:settlement.lazada_fees,web:settlement.website_fees}};
+    const fpctMap ={{shopee:settlement.shopee_fee_pct,tiktok:settlement.tiktok_fee_pct,lazada:settlement.lazada_fee_pct,web:settlement.website_fee_pct}};
+
+    function fmtNullable(v){{ return (v===null||v===undefined||v==="")?'<span style="color:var(--text-soft)">—</span>':fmtFull(v); }}
+    function fmtPct(v){{ return (v===null||v===undefined||v==="")?'<span style="color:var(--text-soft)">—</span>':v; }}
+
     let revHtml="";
-    let totRev=0,totSet=0;
+    let totXk=0,totSan=0,totSet=0,totFee=0;
     ["shopee","tiktok","lazada","web"].forEach(p=>{{
-        const r=wkAgg.byChannel[p]||0;  // ← from week range, not date picker
+        // "DT File Xuất kho" = giá trị auto-aggregate từ raw sheets (dashboard tự tính từ ĐH...)
+        const xk=wkAgg.byChannel[p]||0;
+        // "DT Từ sàn" = giá trị nhập tay (từ Shopee/TikTok/Lazada seller center)
+        const tsRaw=tusanMap[p];
+        const tsHas=(tsRaw!=null&&tsRaw!=="");
+        const ts=tsHas?Number(tsRaw):null;
         const st=settMap[p]||0;
-        const diff=r-st;
-        const pct=r>0?((st/r)*100).toFixed(1)+"%":"—";
-        revHtml+=`<tr><td><b>${{platformNames[p]}}</b></td><td class="right">${{fmtFull(r)}}</td><td class="right">${{fmtFull(st)}}</td><td class="right">${{fmtFull(diff)}}</td><td class="right">${{pct}}</td></tr>`;
-        totRev+=r;totSet+=st;
+        const fee=feesMap[p];
+        const fpct=fpctMap[p];
+        // Chênh lệch & % quyết toán: so quyết toán vs Xuất kho (số dashboard auto-tính được)
+        const diff=xk-st;
+        const pct=xk>0?((st/xk)*100).toFixed(1)+"%":"—";
+        const rid=`wr-fee-${{p}}`;
+        revHtml+=`<tr>
+            <td><b>${{platformNames[p]}}</b></td>
+            <td class="right">${{fmtFull(xk)}}</td>
+            <td class="right">${{tsHas?fmtFull(ts):'<span style="color:var(--text-soft)">—</span>'}}</td>
+            <td class="right" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="document.getElementById('${{rid}}').classList.toggle('hidden')" title="Bấm để xem chi tiết phí">${{fmtFull(st)}} <span style="color:var(--text-soft);font-size:0.85em">▼</span></td>
+            <td class="right">${{fmtFull(diff)}}</td>
+            <td class="right">${{pct}}</td>
+        </tr>
+        <tr id="${{rid}}" class="hidden wr-fee-detail">
+            <td colspan="6" style="background:var(--bg-section);padding:14px 18px;border-left:3px solid var(--accent)">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;font-size:0.92em">
+                    <div><b>📊 Tổng phí (VND)</b><br><span style="font-size:1.15em;color:var(--primary-dark)">${{fmtNullable(fee)}}</span></div>
+                    <div><b>📈 Tỷ lệ chi phí / Doanh thu</b><br><span style="font-size:1.15em;color:var(--primary-dark)">${{fmtPct(fpct)}}</span></div>
+                    <div><b>💰 Doanh thu quyết toán (thực nhận)</b><br><span style="font-size:1.15em;color:var(--primary-dark)">${{fmtFull(st)}}</span></div>
+                    <div><b>🧮 Tổng doanh thu trước phí</b><br><span style="font-size:1.15em;color:var(--primary-dark)">${{(fee!=null&&st)?fmtFull(Number(fee)+Number(st)):'<span style=\\"color:var(--text-soft)\\">—</span>'}}</span></div>
+                </div>
+                <div style="margin-top:10px;color:var(--text-soft);font-size:0.85em">📝 Nhập tay vào Google Sheet weekly_report (mục ①) để cập nhật chi tiết phí.</div>
+            </td>
+        </tr>`;
+        totXk+=xk; totSet+=st;
+        if(tsHas) totSan+=ts;
+        if(fee!=null&&fee!=="") totFee+=Number(fee)||0;
     }});
-    const totPct=totRev>0?((totSet/totRev)*100).toFixed(1)+"%":"—";
-    revHtml+=`<tr style="font-weight:700;background:var(--bg-section)"><td>合計 Tổng Cộng</td><td class="right">${{fmtFull(totRev)}}</td><td class="right">${{fmtFull(totSet)}}</td><td class="right">${{fmtFull(totRev-totSet)}}</td><td class="right">${{totPct}}</td></tr>`;
+    const totPct=totXk>0?((totSet/totXk)*100).toFixed(1)+"%":"—";
+    revHtml+=`<tr style="font-weight:700;background:var(--bg-section)"><td>合計 Tổng Cộng</td><td class="right">${{fmtFull(totXk)}}</td><td class="right">${{totSan?fmtFull(totSan):'—'}}</td><td class="right">${{fmtFull(totSet)}}</td><td class="right">${{fmtFull(totXk-totSet)}}</td><td class="right">${{totPct}}</td></tr>`;
     document.getElementById("wr-revenue-table").innerHTML=revHtml;
 
     /* (2) Top 10 SP Tuần + Tháng */
@@ -2637,11 +2726,11 @@ def main():
             c = cats[mk]
             print(f"  {platform} {mk}: san={c.get('san',0):,} son={c.get('son',0):,} congcu={c.get('congcu',0):,} decor={c.get('decor',0):,}")
 
-    print("\nEnriching products from raw sheets...")
-    for platform in ["web", "lazada"]:
+    print("\nRebuilding products from raw sheets (all 4 platforms, per-SKU accuracy)...")
+    for platform in ["shopee", "tiktok", "web", "lazada"]:
         raw_name = platform + "_raw"
         if raw_name in csv_paths:
-            enrich_products_from_raw(platform, csv_paths[raw_name], platforms_data, daily_data)
+            enrich_products_from_raw(platform, csv_paths[raw_name], platforms_data, daily_data, force_rebuild=True)
 
     print("\nBuilding data JSON...")
     data_json = build_data_json(platforms_data, categories_data)
