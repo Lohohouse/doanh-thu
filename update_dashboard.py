@@ -169,14 +169,15 @@ def _parse_weekly_csv(csv_text):
         cols_bcde = [r[1], r[2], r[3], r[4]]
 
         # Detect section header
-        if any(col_a.startswith(prefix) for prefix in ["①","②","③","④","⑤","⑥","⑦","⑧","⑨"]):
+        if any(col_a.startswith(prefix) for prefix in ["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩"]):
             # Map number to section key
             section_map = {
                 "①": "settlement", "②": "ads_weekly",
                 "③": "ads_monthly_shopee", "④": "ads_monthly_tiktok",
                 "⑤": "customer_care", "⑥": "reviews",
                 "⑦": "complaints", "⑧": "complaint_ratio",
-                "⑨": "extra",
+                "⑨": "review_plan",
+                "⑩": "extra",
             }
             section = section_map.get(col_a[0], "")
             rows_by_section.setdefault(section, [])
@@ -400,6 +401,69 @@ def _parse_weekly_csv(csv_text):
         "website": {"complaints": num_or_none(sk[3]), "total_orders": num_or_none(td[3])},
     }
 
+    # === ĐÁNH GIÁ & KẾ HOẠCH TUẦN TỚI (mục ⑨ trong sheet) ===
+    # Cấu trúc nâng cao:
+    #   A. Đánh giá tuần này:
+    #     - "Tiêu đề đánh giá"  → A.title         (cột B)
+    #     - "Tóm tắt số liệu"   → A.summary       (cột B)
+    #     - "Nội dung đánh giá" → A.content       (cột B, có thể nhiều dòng / markdown)
+    #   B. Kế hoạch tuần tới:
+    #     - "Tiêu đề kế hoạch"  → B.title         (cột B)
+    #     - "Hành động N" (row) → B.actions       (cột B=Nhóm, C=Hành động, D=Hạn, E=Ưu tiên)
+    # Backward-compat: nếu user dùng cách cũ ("Đánh giá tuần này" / "Kế hoạch tuần tới"
+    # ở col B), vẫn parse được.
+    def _txt(cell):
+        v = (cell or "").strip() if cell else ""
+        return v if v and v != "-" else None
+
+    # New rich structure (preferred)
+    a_title_row   = get_row("review_plan", "tieu de danh gia", "tieu de a", "title a")
+    a_summary_row = get_row("review_plan", "tom tat so lieu", "tom tat", "summary a")
+    a_content_row = get_row("review_plan", "noi dung danh gia", "noi dung a", "danh gia chi tiet", "chi tiet danh gia")
+    b_title_row   = get_row("review_plan", "tieu de ke hoach", "tieu de b", "title b")
+
+    # Backward-compat / fallback
+    legacy_eval   = get_row("review_plan", "danh gia tuan nay", "danh gia", "tong ket tuan")
+    legacy_learn  = get_row("review_plan", "bai hoc", "rut kinh nghiem", "diem can cai thien")
+    legacy_plan   = get_row("review_plan", "ke hoach tuan toi", "muc tieu tuan toi", "kpi tuan toi")
+    legacy_note   = get_row("review_plan", "ghi chu", "ghi chu khac", "noi dung khac")
+
+    # Parse all "Hanh dong N" rows for action plan
+    actions = []
+    import re as _re_act
+    for norm_label, orig_label, cols in rows_by_section.get("review_plan", []):
+        # Match "hanh dong" or "hành động N" or just a number prefix "1. ", "2. ", "Action 1"...
+        if norm_label.startswith("hanh dong") or _re_act.match(r"^action\s*\d", norm_label) or _re_act.match(r"^\d+[\.\)]\s", norm_label):
+            cat = _txt(cols[0])
+            act = _txt(cols[1])
+            dl  = _txt(cols[2])
+            pri = _txt(cols[3])
+            if cat or act:
+                actions.append({
+                    "category": cat or "",
+                    "action": act or "",
+                    "deadline": dl or "",
+                    "priority": pri or "Trung",
+                })
+
+    review_plan = {
+        "evaluation": {
+            "title":   _txt(a_title_row[0])   if a_title_row   else None,
+            "summary": _txt(a_summary_row[0]) if a_summary_row else None,
+            "content": _txt(a_content_row[0]) if a_content_row else None,
+            # legacy single-text fallback (cách cũ)
+            "legacy_text":     _txt(legacy_eval[0])  if legacy_eval  else None,
+            "legacy_learn":    _txt(legacy_learn[0]) if legacy_learn else None,
+            "legacy_note":     _txt(legacy_note[0])  if legacy_note  else None,
+        },
+        "plan": {
+            "title":   _txt(b_title_row[0]) if b_title_row else None,
+            "actions": actions,
+            # legacy fallback
+            "legacy_text": _txt(legacy_plan[0]) if legacy_plan else None,
+        },
+    }
+
     return {
         "current_week": code,
         "weeks": {
@@ -415,6 +479,7 @@ def _parse_weekly_csv(csv_text):
                 "reviews": reviews,
                 "complaints": complaints,
                 "complaint_ratio": complaint_ratio,
+                "review_plan": review_plan,
             }
         }
     }
@@ -1221,6 +1286,45 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         .wr-meta {{ font-size: 0.85em; color: var(--text-mid); margin-bottom: 14px; font-style: italic; }}
         .wr-grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
         .hidden {{ display: none; }}
+        .wr-textbox {{ background: var(--bg-soft); border-left: 3px solid var(--accent); padding: 14px 18px; border-radius: 8px; white-space: pre-wrap; line-height: 1.7; color: var(--text-dark); min-height: 80px; font-size: 0.95em; }}
+        .wr-textbox.empty {{ color: var(--text-soft); font-style: italic; border-left-color: var(--border); }}
+        /* === Review/Plan blocks === */
+        .rp-block {{ border-radius: 10px; padding: 18px 22px; margin-bottom: 18px; background: var(--bg-card); box-shadow: var(--shadow-sm); }}
+        .rp-block-a {{ background: #FDF2F4; border: 1px solid #F3D0D9; }}
+        .rp-block-b {{ background: #F2F6FD; border: 1px solid #D1DEF1; }}
+        .rp-heading {{ font-size: 1.05em; font-weight: 700; color: #B83A4A; margin-bottom: 12px; }}
+        .rp-block-b .rp-heading {{ color: #2E5C9E; }}
+        .rp-summary {{ background: #FFE9EC; border-left: 4px solid #E26B7A; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; line-height: 1.6; font-size: 0.93em; }}
+        .rp-summary:empty {{ display: none; }}
+        .rp-content {{ line-height: 1.75; font-size: 0.93em; color: var(--text-dark); }}
+        .rp-content ul {{ margin: 6px 0 12px 0; padding-left: 22px; }}
+        .rp-content li {{ margin-bottom: 6px; }}
+        .rp-content li ul {{ margin: 4px 0 4px 0; }}
+        .rp-content li ul li {{ list-style: '◦  '; margin-bottom: 3px; }}
+        .rp-content .rp-callout {{ background: #F0F4FC; border-left: 4px solid #5B7FA8; padding: 10px 14px; border-radius: 6px; margin: 8px 0; font-size: 0.92em; }}
+        .rp-content b {{ color: var(--text-dark); }}
+        .rp-empty {{ color: var(--text-soft); font-style: italic; padding: 8px 0; }}
+        /* Action table */
+        .rp-actions-table {{ width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 6px; overflow: hidden; }}
+        .rp-actions-table thead th {{ background: #2E5C9E; color: white; padding: 10px 12px; font-size: 0.88em; text-align: left; font-weight: 600; }}
+        .rp-actions-table tbody td {{ padding: 14px 12px; vertical-align: top; border-bottom: 1px solid #E5EBF5; font-size: 0.93em; line-height: 1.55; }}
+        .rp-actions-table tbody tr:last-child td {{ border-bottom: none; }}
+        .rp-actions-table tbody tr:nth-child(even) {{ background: #FAFBFD; }}
+        .rp-stt {{ font-weight: 700; color: var(--text-soft); text-align: center; }}
+        /* Nhóm badge — màu tự gen từ tên */
+        .rp-tag {{ display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 0.82em; font-weight: 600; white-space: nowrap; }}
+        .rp-tag-1 {{ background: #FFE0E5; color: #B83A4A; }}
+        .rp-tag-2 {{ background: #EBE0FF; color: #6A3AB8; }}
+        .rp-tag-3 {{ background: #FFF4D6; color: #B07B14; }}
+        .rp-tag-4 {{ background: #D7F0DC; color: #2D8443; }}
+        .rp-tag-5 {{ background: #D7EBFF; color: #2E5C9E; }}
+        .rp-tag-6 {{ background: #FFD7E6; color: #B83A78; }}
+        .rp-tag-7 {{ background: #E0F0F4; color: #2C7B8A; }}
+        .rp-tag-8 {{ background: #F0E0D7; color: #8A5A2C; }}
+        /* Priority */
+        .rp-pri-cao {{ color: #C82333; font-weight: 700; }}
+        .rp-pri-trung {{ color: #D97706; font-weight: 700; }}
+        .rp-pri-thap {{ color: #65728A; font-weight: 600; }}
         .wr-fee-detail td {{ animation: fadeIn 0.2s ease; }}
         @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(-4px); }} to {{ opacity: 1; transform: translateY(0); }} }}
         .wr-pill {{ display: inline-block; padding: 4px 10px; border-radius: 10px; font-size: 0.8em; font-weight: 600; background: var(--bg-section); color: var(--primary-dark); margin-left: 6px; }}
@@ -1508,7 +1612,32 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </div>
             </div>
 
-            <div class="section-title">④ 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
+            <div class="section-title">④ 銷量對比 So Sánh Lượt Bán Nhóm SP (Các Tuần Trong Tháng)</div>
+            <div class="table-container" style="height:auto;">
+                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+                    <div>
+                        <label style="font-size:0.9em;color:var(--text-soft);margin-right:6px;">📅 Tháng:</label>
+                        <select id="wr-trend-month" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-dark);font-weight:600;cursor:pointer;"></select>
+                    </div>
+                    <div class="channel-pills" id="wr-trend-channel">
+                        <button class="ch-pill active" data-trend-ch="all">Tổng</button>
+                        <button class="ch-pill" data-trend-ch="shopee">Shopee</button>
+                        <button class="ch-pill" data-trend-ch="tiktok">TikTok</button>
+                        <button class="ch-pill" data-trend-ch="web">Website</button>
+                    </div>
+                </div>
+                <div class="wr-meta" id="wr-trend-meta"></div>
+                <table>
+                    <thead><tr id="wr-trend-thead"></tr></thead>
+                    <tbody id="wr-trend-tbody"></tbody>
+                </table>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">📈 Biểu đồ biến động lượt bán nhóm SP theo tuần</div>
+                <div class="chart-wrapper"><canvas id="wr-trend-chart"></canvas></div>
+            </div>
+
+            <div class="section-title">⑤ 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
             <div class="table-container">
                 <div class="wr-meta">Số liệu nhập tay từ file <code>weekly_report_data.json</code> — Tuần đang xem: <b id="wr-ad-week-label">—</b></div>
                 <table>
@@ -1527,7 +1656,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑤ 廣告費用月報 Chi Phí Quảng Cáo Theo Tháng</div>
+            <div class="section-title">⑥ 廣告費用月報 Chi Phí Quảng Cáo Theo Tháng</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1545,7 +1674,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑥ 廣告費用占比 Tỷ Lệ Phí QC / Doanh Thu</div>
+            <div class="section-title">⑦ 廣告費用占比 Tỷ Lệ Phí QC / Doanh Thu</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1561,7 +1690,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑦ 客戶關懷 Chăm Sóc Khách Hàng (Theo Tuần)</div>
+            <div class="section-title">⑧ 客戶關懷 Chăm Sóc Khách Hàng (Theo Tuần)</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1576,7 +1705,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑧ 客戶評價 Đánh Giá Khách Hàng</div>
+            <div class="section-title">⑨ 客戶評價 Đánh Giá Khách Hàng</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1593,7 +1722,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑨ 投訴處理 Xử Lý Khiếu Nại</div>
+            <div class="section-title">⑩ 投訴處理 Xử Lý Khiếu Nại</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1610,7 +1739,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
             </div>
 
-            <div class="section-title">⑩ 投訴占比 Tỷ Lệ Đơn Khiếu Nại / Tổng Đơn</div>
+            <div class="section-title">⑪ 投訴占比 Tỷ Lệ Đơn Khiếu Nại / Tổng Đơn</div>
             <div class="table-container">
                 <table>
                     <thead>
@@ -1624,6 +1753,31 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                     </thead>
                     <tbody id="wr-complaint-ratio-table"></tbody>
                 </table>
+            </div>
+
+            <div class="section-title">⑫ 週評與下週計劃 Đánh Giá &amp; Kế Hoạch Tuần Tới</div>
+            <!-- Phần A. Đánh giá -->
+            <div class="rp-block rp-block-a">
+                <div class="rp-heading" id="wr-rp-eval-title">A. Đánh giá tuần này</div>
+                <div class="rp-summary" id="wr-rp-eval-summary"></div>
+                <div class="rp-content" id="wr-rp-eval-content"></div>
+            </div>
+            <!-- Phần B. Kế hoạch -->
+            <div class="rp-block rp-block-b">
+                <div class="rp-heading" id="wr-rp-plan-title">B. Kế hoạch hành động tuần sau</div>
+                <table class="rp-actions-table">
+                    <thead>
+                        <tr><th style="width:50px;">STT</th><th style="width:140px;">Nhóm</th><th>Hành động cụ thể</th><th style="width:80px;">Hạn</th><th style="width:80px;">Ưu tiên</th></tr>
+                    </thead>
+                    <tbody id="wr-rp-plan-actions"></tbody>
+                </table>
+            </div>
+            <div class="wr-meta" style="font-size:0.85em;color:var(--text-soft);margin-top:8px;">
+                💾 Cập nhật mỗi tuần bằng cách nhập vào Google Sheet weekly_report (gid=1792982691), mục <b>⑨ ĐÁNH GIÁ &amp; KẾ HOẠCH TUẦN TỚI</b>:
+                <ul style="margin:6px 0 0 18px;font-size:0.9em">
+                    <li><b>A. Đánh giá:</b> hàng "Tiêu đề đánh giá", "Tóm tắt số liệu", "Nội dung đánh giá" (cột B). Hỗ trợ markdown: <code>**đậm**</code>, <code>*nghiêng*</code>, dòng bắt đầu bằng <code>•</code> hoặc <code>-</code> là bullet, indent (2 space + <code>*</code>) là sub-bullet, <code>&gt; </code> là callout.</li>
+                    <li><b>B. Kế hoạch:</b> mỗi hành động 1 hàng có nhãn "Hành động N" hoặc "N. ..." ở cột A. Cột B=Nhóm, C=Hành động (markdown), D=Hạn, E=Ưu tiên (Cao/Trung/Thấp).</li>
+                </ul>
             </div>
         </div>
 
@@ -2074,6 +2228,126 @@ function badgeDelta(cur,prev){{
 
 function fmtCellNum(n){{ return (n===null||n===undefined)?"—":fmtFull(Math.round(n)); }}
 
+/* ===== Global group helpers (cũng dùng cho mục ④) ===== */
+function _normName(s){{
+    return (s||"").toString().toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g,"")
+        .replace(/đ/g,"d").replace(/\s+/g," ").trim();
+}}
+function groupKeyOf(name){{
+    const sku=((typeof SKU_BY_NAME!=="undefined"&&SKU_BY_NAME&&SKU_BY_NAME[name])||"").toUpperCase();
+    if(/^L-SM-.*-01[A-Z0-9]?$/.test(sku)) return "Sơn tường 1kg (gộp các tone màu)";
+    if(/^L-MZ-.*-50[A-Z0-9]?$/.test(sku)) return "Mẫu thử 50ml (gộp các màu)";
+    if(/^(L-)?LS-DK-/.test(sku)) return "Sàn Nhựa Giả Gỗ Dán Keo (gộp combo + lẻ tấm)";
+    const n=_normName(name);
+    if((n.includes("mau thu")||n.includes("sample")||n.includes("minisize")||n.includes("trai nghiem"))&&(n.includes("50ml")||n.includes("50 ml"))) return "Mẫu thử 50ml (gộp các màu)";
+    if(n.includes("son")&&(n.includes("1kg")||n.includes("1 kg"))&&!n.includes("lot")) return "Sơn tường 1kg (gộp các tone màu)";
+    if((n.includes("san nhua")||n.includes("san gia go")||n.includes("san go"))&&(n.includes("dan keo")||n.includes("keo dan"))) return "Sàn Nhựa Giả Gỗ Dán Keo (gộp combo + lẻ tấm)";
+    return name;
+}}
+
+/* ===== TREND: lượt bán nhóm SP các tuần trong tháng ===== */
+let _trendChart=null;
+function _weeksOfMonth(monthKey){{
+    // monthKey = "TX" → year = từ data hiện tại
+    const m=parseInt(monthKey.slice(1));
+    // Tìm year từ DD
+    let year=2026;
+    for(const p of ["shopee","tiktok","web","lazada"]){{
+        if(!DD[p])continue;
+        const keys=Object.keys(DD[p]);
+        if(keys.length){{ year=parseInt(keys[0].slice(0,4)); break; }}
+    }}
+    const daysInMonth=new Date(year,m,0).getDate();
+    const weeks=[];
+    let start=1;
+    while(start<=daysInMonth){{
+        const end=Math.min(start+6,daysInMonth);
+        weeks.push({{label:`T${{m}}-W${{weeks.length+1}}`,start,end,fullLabel:`${{start}}-${{end}}/${{m}}`}});
+        start=end+1;
+    }}
+    return {{year,month:m,weeks,daysInMonth}};
+}}
+function renderTrendBlock(chSel, monthKey){{
+    const info=_weeksOfMonth(monthKey);
+    const plats= chSel==="all"?["shopee","tiktok","web","lazada"]:[chSel];
+    const meta=document.getElementById("wr-trend-meta");
+    meta.innerHTML=`📅 Tháng <b>${{info.month}}/${{info.year}}</b> · Kênh: <b>${{chSel==="all"?"Tổng (Shopee+TikTok+Web+Lazada)":platformNames[chSel]||chSel}}</b> · ${{info.weeks.length}} tuần`;
+
+    // qtyByGroupByWeek[groupName][weekIdx] = total qty
+    const data={{}};
+    info.weeks.forEach((wk,wi)=>{{
+        plats.forEach(p=>{{
+            if(!DD[p])return;
+            for(let d=wk.start;d<=wk.end;d++){{
+                const fd=`${{info.year}}-${{String(info.month).padStart(2,"0")}}-${{String(d).padStart(2,"0")}}`;
+                const day=DD[p][fd];
+                if(!day||!day.products)continue;
+                day.products.forEach(prod=>{{
+                    const g=groupKeyOf(prod.name);
+                    if(!data[g])data[g]=new Array(info.weeks.length).fill(0);
+                    data[g][wi]+=prod.qty||0;
+                }});
+            }}
+        }});
+    }});
+
+    // Pick top N nhóm theo tổng qty all weeks
+    const sumByGroup=Object.entries(data).map(([g,arr])=>[g,arr.reduce((a,b)=>a+b,0)]).sort((a,b)=>b[1]-a[1]);
+    const topGroups=sumByGroup.slice(0,8).map(x=>x[0]);
+
+    // Build table
+    let head=`<th>Nhóm SP</th>`;
+    info.weeks.forEach(wk=>{{ head+=`<th class="right">${{wk.fullLabel}}</th>`; }});
+    head+=`<th class="right">Tổng</th><th>Xu hướng (Δ tuần cuối vs đầu tháng)</th>`;
+    document.getElementById("wr-trend-thead").innerHTML=head;
+
+    let body="";
+    topGroups.forEach(g=>{{
+        const arr=data[g]||[];
+        const tot=arr.reduce((a,b)=>a+b,0);
+        const first=arr.find(v=>v>0)||0;
+        const last=arr.slice().reverse().find(v=>v>0)||0;
+        let trend='<span class="badge neutral">—</span>';
+        if(first>0&&last>0&&first!==last){{
+            const pct=((last-first)/first*100).toFixed(1);
+            trend=pct>=0?`<span class="badge up">↑ ${{pct}}%</span>`:`<span class="badge down">↓ ${{Math.abs(pct).toFixed(1)}}%</span>`;
+        }}
+        body+=`<tr><td><b>${{g.length>60?g.slice(0,60)+"...":g}}</b></td>`;
+        arr.forEach(v=>{{ body+=`<td class="right">${{v?fmtFull(v):'<span style="color:var(--text-soft)">—</span>'}}</td>`; }});
+        body+=`<td class="right"><b>${{fmtFull(tot)}}</b></td><td>${{trend}}</td></tr>`;
+    }});
+    if(!body)body=`<tr><td colspan="${{info.weeks.length+3}}" class="wr-empty">Không có data nhóm SP cho tháng ${{info.month}}/${{info.year}}</td></tr>`;
+    document.getElementById("wr-trend-tbody").innerHTML=body;
+
+    // Chart: line cho top 5 nhóm
+    const ctx=document.getElementById("wr-trend-chart");
+    if(_trendChart)_trendChart.destroy();
+    const palette=["#8B6F47","#C4A572","#5B8C5A","#A86A6A","#6B8CAE","#B8956A","#7A6B8C","#A8896B"];
+    const top5=topGroups.slice(0,5);
+    _trendChart=new Chart(ctx,{{
+        type:"line",
+        data:{{
+            labels:info.weeks.map(wk=>wk.fullLabel),
+            datasets:top5.map((g,i)=>({{
+                label:g.length>40?g.slice(0,40)+"...":g,
+                data:data[g],
+                borderColor:palette[i%palette.length],
+                backgroundColor:palette[i%palette.length]+"30",
+                borderWidth:2.5,
+                tension:0.3,
+                fill:false,
+                pointRadius:5
+            }}))
+        }},
+        options:{{
+            responsive:true, maintainAspectRatio:false,
+            plugins:{{ legend:{{position:"bottom",labels:{{boxWidth:14,font:{{size:11}}}}}}, tooltip:{{callbacks:{{label:(c)=>`${{c.dataset.label}}: ${{fmtFull(c.parsed.y)}} sl`}}}}}},
+            scales:{{ y:{{beginAtZero:true,ticks:{{callback:v=>fmtFull(v)}}}} }}
+        }}
+    }});
+}}
+
 function renderWeekly(){{
     const [s,e]=getWrRange();
     const platforms=getWrPlatforms();
@@ -2274,6 +2548,25 @@ function renderWeekly(){{
     document.getElementById("wr-group-month-table").innerHTML=gmH;
     document.getElementById("wr-group-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
 
+    /* (2c) So sánh lượt bán nhóm SP các tuần trong tháng */
+    // Populate month dropdown lần đầu (idempotent)
+    const monthSel=document.getElementById("wr-trend-month");
+    if(monthSel&&monthSel.options.length===0){{
+        allMonths.forEach(mk=>{{
+            const opt=document.createElement("option");
+            opt.value=mk; opt.textContent=mk;
+            monthSel.appendChild(opt);
+        }});
+        // Default: month from end date picker
+        monthSel.value=window._trendMonth||endMonth;
+        monthSel.addEventListener("change",()=>{{
+            window._trendMonth=monthSel.value;
+            renderTrendBlock(window._trendChannel||"all", monthSel.value);
+        }});
+    }}
+    const selMonth=monthSel?monthSel.value:(window._trendMonth||endMonth);
+    renderTrendBlock(window._trendChannel||"all", selMonth);
+
     /* (3) Ads weekly */
     document.getElementById("wr-ad-week-label").textContent=wkData?wkData.label||"—":"Chưa có data";
     const adsW=(wkData&&wkData.ads_weekly)||{{shopee:{{}},tiktok:{{}}}};
@@ -2352,6 +2645,126 @@ function renderWeekly(){{
     crH+=`<tr><td>Tổng đơn hàng</td><td class="right">${{fmtCellNum((cr.shopee||{{}}).total_orders)}}</td><td class="right">${{fmtCellNum((cr.tiktok||{{}}).total_orders)}}</td><td class="right">${{fmtCellNum((cr.website||{{}}).total_orders)}}</td><td class="right">${{fmtCellNum((cr.lazada||{{}}).total_orders)}}</td></tr>`;
     crH+=`<tr style="background:var(--bg-section)"><td><b>Tỷ lệ KN / Tổng đơn</b></td><td class="right"><b>${{safePct((cr.shopee||{{}}).complaints,(cr.shopee||{{}}).total_orders)}}</b></td><td class="right"><b>${{safePct((cr.tiktok||{{}}).complaints,(cr.tiktok||{{}}).total_orders)}}</b></td><td class="right"><b>${{safePct((cr.website||{{}}).complaints,(cr.website||{{}}).total_orders)}}</b></td><td class="right"><b>${{safePct((cr.lazada||{{}}).complaints,(cr.lazada||{{}}).total_orders)}}</b></td></tr>`;
     document.getElementById("wr-complaint-ratio-table").innerHTML=crH;
+
+    /* (12) Đánh giá & Kế hoạch tuần tới */
+    renderReviewPlan(wkData);
+}}
+
+/* ========== Markdown lite + Review/Plan renderer ========== */
+function escHtml(s){{
+    return (s||"").toString()
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}}
+function mdLite(text){{
+    // Hỗ trợ: **bold**, *italic*, • / - bullets, indent sub-bullets, > callout
+    if(!text)return "";
+    const lines=text.split(/\\r?\\n/);
+    let out=[]; let ul=null; let sub=null;
+    function closeSub(){{ if(sub){{ out.push("</ul>"); sub=null; }} }}
+    function closeUl(){{ closeSub(); if(ul){{ out.push("</ul>"); ul=null; }} }}
+    for(let raw of lines){{
+        let line=raw.replace(/\\s+$/,"");
+        if(!line.trim()){{ closeUl(); out.push("<br>"); continue; }}
+        // Callout > text
+        const cm=line.match(/^\\s*>\\s+(.+)/);
+        if(cm){{ closeUl(); out.push(`<div class="rp-callout">${{inlineMd(cm[1])}}</div>`); continue; }}
+        // Indented sub-bullet (2+ spaces then • or * or -)
+        const sm=line.match(/^\\s{{2,}}[•*\\-]\\s+(.+)/);
+        if(sm){{
+            if(!ul){{ out.push("<ul>"); ul="opened"; }}
+            if(!sub){{ out.push("<ul>"); sub="opened"; }}
+            out.push(`<li>${{inlineMd(sm[1])}}</li>`);
+            continue;
+        }}
+        // Top-level bullet
+        const tm=line.match(/^[•*\\-]\\s+(.+)/);
+        if(tm){{
+            closeSub();
+            if(!ul){{ out.push("<ul>"); ul="opened"; }}
+            out.push(`<li>${{inlineMd(tm[1])}}</li>`);
+            continue;
+        }}
+        // Regular line
+        closeUl();
+        out.push(`<p style="margin:6px 0">${{inlineMd(line)}}</p>`);
+    }}
+    closeUl();
+    return out.join("");
+}}
+function inlineMd(s){{
+    // Escape HTML rồi áp inline markdown
+    let t=escHtml(s);
+    // links [text](url)
+    t=t.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g,'<a href="$2" target="_blank" style="color:var(--primary)">$1</a>');
+    // bold **x**
+    t=t.replace(/\\*\\*([^*]+)\\*\\*/g,'<b>$1</b>');
+    // italic *x*
+    t=t.replace(/(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)/g,'<i>$1</i>');
+    return t;
+}}
+function _tagClassForCategory(name){{
+    if(!name)return "rp-tag-3";
+    let h=0; for(let i=0;i<name.length;i++) h=(h*31+name.charCodeAt(i))|0;
+    return "rp-tag-"+(Math.abs(h)%8+1);
+}}
+function _priClass(p){{
+    const n=(p||"").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/đ/g,"d");
+    if(n.includes("cao")||n.includes("high")) return "rp-pri-cao";
+    if(n.includes("thap")||n.includes("low")) return "rp-pri-thap";
+    return "rp-pri-trung";
+}}
+function renderReviewPlan(wkData){{
+    const rp=(wkData&&wkData.review_plan)||{{evaluation:{{}},plan:{{}}}};
+    const ev=rp.evaluation||{{}}; const pl=rp.plan||{{}};
+
+    // Title A
+    const aTitle=document.getElementById("wr-rp-eval-title");
+    aTitle.textContent=ev.title||"A. Đánh giá tuần này";
+
+    // Summary A
+    const aSummary=document.getElementById("wr-rp-eval-summary");
+    if(ev.summary){{
+        aSummary.innerHTML=inlineMd(ev.summary);
+        aSummary.style.display="";
+    }} else aSummary.style.display="none";
+
+    // Content A (markdown + legacy fallback)
+    const aContent=document.getElementById("wr-rp-eval-content");
+    let aHtml="";
+    if(ev.content) aHtml+=mdLite(ev.content);
+    else if(ev.legacy_text) aHtml+=mdLite(ev.legacy_text);
+    if(ev.legacy_learn){{
+        aHtml+=`<div style="margin-top:14px"><b>💡 Bài học / Rút kinh nghiệm:</b></div>`+mdLite(ev.legacy_learn);
+    }}
+    if(ev.legacy_note){{
+        aHtml+=`<div style="margin-top:14px"><b>📝 Ghi chú:</b></div>`+mdLite(ev.legacy_note);
+    }}
+    if(!aHtml) aHtml='<div class="rp-empty">(Chưa có nội dung đánh giá — nhập vào Google Sheet, mục ⑨ → hàng "Nội dung đánh giá")</div>';
+    aContent.innerHTML=aHtml;
+
+    // Title B
+    const bTitle=document.getElementById("wr-rp-plan-title");
+    bTitle.textContent=pl.title||"B. Kế hoạch hành động tuần sau";
+
+    // Actions table B
+    const tbody=document.getElementById("wr-rp-plan-actions");
+    if(pl.actions&&pl.actions.length){{
+        tbody.innerHTML=pl.actions.map((a,i)=>{{
+            const tagCls=_tagClassForCategory(a.category);
+            const priCls=_priClass(a.priority);
+            return `<tr>
+                <td class="rp-stt">${{i+1}}</td>
+                <td>${{a.category?`<span class="rp-tag ${{tagCls}}">${{escHtml(a.category)}}</span>`:""}}</td>
+                <td>${{mdLite(a.action||"")}}</td>
+                <td>${{escHtml(a.deadline||"")}}</td>
+                <td class="${{priCls}}">${{escHtml(a.priority||"")}}</td>
+            </tr>`;
+        }}).join("");
+    }} else if(pl.legacy_text){{
+        tbody.innerHTML=`<tr><td colspan="5">${{mdLite(pl.legacy_text)}}</td></tr>`;
+    }} else {{
+        tbody.innerHTML=`<tr><td colspan="5" class="rp-empty">(Chưa có hành động — thêm các hàng "Hành động 1", "Hành động 2"... vào Google Sheet, mục ⑨)</td></tr>`;
+    }}
 }}
 
 /* ===== SP SEARCH ===== */
@@ -2544,6 +2957,13 @@ document.querySelectorAll('#weekly .mode-btn[data-target="wr"]').forEach(b=>{{b.
 document.querySelectorAll('#weekly .ch-pill[data-target="wr"]').forEach(b=>{{b.addEventListener("click",e=>{{
     wrChannel=e.target.dataset.channel;
     document.querySelectorAll('#weekly .ch-pill[data-target="wr"]').forEach(t=>t.classList.remove("active"));
+    e.target.classList.add("active");
+    renderWeekly();
+}});}});
+/* Mục ④ — pill chọn kênh cho So Sánh Lượt Bán */
+document.querySelectorAll('#wr-trend-channel .ch-pill').forEach(b=>{{b.addEventListener("click",e=>{{
+    window._trendChannel=e.target.dataset.trendCh;
+    document.querySelectorAll('#wr-trend-channel .ch-pill').forEach(t=>t.classList.remove("active"));
     e.target.classList.add("active");
     renderWeekly();
 }});}});
