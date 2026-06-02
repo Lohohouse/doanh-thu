@@ -162,7 +162,7 @@
 <body>
     <div class="header">
         <h1><span class="accent">LOHO</span> House 營收報表 Báo Cáo Doanh Thu 2026</h1>
-        <p>更新時間 Cập nhật: 02/06/2026 08:55</p>
+        <p>更新時間 Cập nhật: 02/06/2026 09:00</p>
     </div>
 
     <div class="controls">
@@ -1991,6 +1991,7 @@ document.querySelectorAll('#lookup .ch-pill[data-target="main"]').forEach(b=>{b.
     if(el)el.addEventListener("change",lookup);
 });
 
+/* SP detail controls event handlers (data-target="sp") */
 document.querySelectorAll('#lookup .mode-btn[data-target="sp"]').forEach(b=>{b.addEventListener("click",e=>{
     spLookupMode=e.target.dataset.mode;
     document.querySelectorAll('#lookup .mode-btn[data-target="sp"]').forEach(t=>t.classList.remove("active"));
@@ -2010,6 +2011,7 @@ document.querySelectorAll('#lookup .ch-pill[data-target="sp"]').forEach(b=>{b.ad
     if(el)el.addEventListener("change",()=>{ if(selectedSP)renderSPDetail(selectedSP); });
 });
 
+/* SP search event handlers */
 const spSearchInput=document.getElementById("lookup-sp-search");
 if(spSearchInput){
     spSearchInput.addEventListener("input",e=>handleSPSearch(e.target.value));
