@@ -1599,14 +1599,14 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 <div class="table-container" style="height:auto;">
                     <div class="chart-title">📦 Top 5 nhóm SP trong tuần (kỳ đã chọn) <span class="wr-pill" id="wr-group-week-meta"></span></div>
                     <table>
-                        <thead><tr><th>#</th><th>Nhóm SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th>So với cùng kỳ tuần trước</th></tr></thead>
+                        <thead><tr><th>#</th><th>Nhóm SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th class="right">占比 % Tỷ Lệ DT</th><th>So với cùng kỳ tuần trước</th></tr></thead>
                         <tbody id="wr-group-week-table"></tbody>
                     </table>
                 </div>
                 <div class="table-container" style="height:auto;">
                     <div class="chart-title">📦 Top 5 nhóm SP trong tháng <span class="wr-pill" id="wr-group-month-meta"></span></div>
                     <table>
-                        <thead><tr><th>#</th><th>Nhóm SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th>So với tháng trước</th></tr></thead>
+                        <thead><tr><th>#</th><th>Nhóm SP</th><th class="right">SL</th><th class="right">Doanh thu</th><th class="right">占比 % Tỷ Lệ DT</th><th>So với tháng trước</th></tr></thead>
                         <tbody id="wr-group-month-table"></tbody>
                     </table>
                 </div>
@@ -2258,15 +2258,24 @@ function _weeksOfMonth(monthKey){{
         const keys=Object.keys(DD[p]);
         if(keys.length){{ year=parseInt(keys[0].slice(0,4)); break; }}
     }}
-    const daysInMonth=new Date(year,m,0).getDate();
+    // Tuần làm việc Thứ 2 → Chủ Nhật. Một tuần thuộc tháng chứa Thứ Sáu của tuần đó.
+    const pad=n=>String(n).padStart(2,"0");
+    const iso=dt=>`${{dt.getFullYear()}}-${{pad(dt.getMonth()+1)}}-${{pad(dt.getDate())}}`;
+    const ddmm=dt=>`${{pad(dt.getDate())}}/${{pad(dt.getMonth()+1)}}`;
     const weeks=[];
-    let start=1;
-    while(start<=daysInMonth){{
-        const end=Math.min(start+6,daysInMonth);
-        weeks.push({{label:`T${{m}}-W${{weeks.length+1}}`,start,end,fullLabel:`${{start}}-${{end}}/${{m}}`}});
-        start=end+1;
+    let d=new Date(year,m-1,1);
+    while(d.getMonth()===m-1){{
+        if(d.getDay()===5){{ // Thứ Sáu (getDay: CN=0 ... T6=5)
+            const mon=new Date(d); mon.setDate(d.getDate()-4); // Thứ 2
+            const sun=new Date(d); sun.setDate(d.getDate()+2); // Chủ Nhật
+            const dates=[];
+            let cur=new Date(mon);
+            while(cur<=sun){{ dates.push(iso(cur)); cur.setDate(cur.getDate()+1); }}
+            weeks.push({{label:`T${{m}}-W${{weeks.length+1}}`,dates,fullLabel:`${{ddmm(mon)}}-${{ddmm(sun)}}`}});
+        }}
+        d.setDate(d.getDate()+1);
     }}
-    return {{year,month:m,weeks,daysInMonth}};
+    return {{year,month:m,weeks}};
 }}
 function renderTrendBlock(chSel, monthKey){{
     const info=_weeksOfMonth(monthKey);
@@ -2279,16 +2288,15 @@ function renderTrendBlock(chSel, monthKey){{
     info.weeks.forEach((wk,wi)=>{{
         plats.forEach(p=>{{
             if(!DD[p])return;
-            for(let d=wk.start;d<=wk.end;d++){{
-                const fd=`${{info.year}}-${{String(info.month).padStart(2,"0")}}-${{String(d).padStart(2,"0")}}`;
+            wk.dates.forEach(fd=>{{
                 const day=DD[p][fd];
-                if(!day||!day.products)continue;
+                if(!day||!day.products)return;
                 day.products.forEach(prod=>{{
                     const g=groupKeyOf(prod.name);
                     if(!data[g])data[g]=new Array(info.weeks.length).fill(0);
                     data[g][wi]+=prod.qty||0;
                 }});
-            }}
+            }});
         }});
     }});
 
@@ -2525,26 +2533,30 @@ function renderWeekly(){{
     const groupWeek=groupMap(prodMap);
     const groupWeekPrev=groupMap(prevProdMap);
     const topGroupWeek=Object.entries(groupWeek).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,5);
+    const totalWeekRev=Object.values(groupWeek).reduce((s,v)=>s+(v.revenue||0),0);
     let gwH="";
     topGroupWeek.forEach(([name,v],i)=>{{
         const prev=groupWeekPrev[name];
         const prevRev=prev?prev.revenue:0;
-        gwH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
+        const pct=totalWeekRev>0?(v.revenue/totalWeekRev*100):0;
+        gwH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td class="right"><b>${{pct.toFixed(1)}}%</b></td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
     }});
-    if(!gwH)gwH='<tr><td colspan="5" class="wr-empty">Không có data nhóm SP trong khoảng đã chọn</td></tr>';
+    if(!gwH)gwH='<tr><td colspan="6" class="wr-empty">Không có data nhóm SP trong khoảng đã chọn</td></tr>';
     document.getElementById("wr-group-week-table").innerHTML=gwH;
     document.getElementById("wr-group-week-meta").textContent=periodLabel;
 
     const groupMonth=groupMap(monthData.products);
     const groupMonthPrev=groupMap(prevMonthData.products||{{}});
     const topGroupMonth=Object.entries(groupMonth).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,5);
+    const totalMonthRev=Object.values(groupMonth).reduce((s,v)=>s+(v.revenue||0),0);
     let gmH="";
     topGroupMonth.forEach(([name,v],i)=>{{
         const prev=groupMonthPrev[name];
         const prevRev=prev?prev.revenue:0;
-        gmH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
+        const pct=totalMonthRev>0?(v.revenue/totalMonthRev*100):0;
+        gmH+=`<tr><td><b>${{i+1}}</b></td><td>${{name}}</td><td class="right">${{fmtFull(v.qty)}}</td><td class="right">${{fmtFull(v.revenue)}}</td><td class="right"><b>${{pct.toFixed(1)}}%</b></td><td>${{badgeDelta(v.revenue,prevRev)}}</td></tr>`;
     }});
-    if(!gmH)gmH='<tr><td colspan="5" class="wr-empty">Không có data nhóm SP cho tháng</td></tr>';
+    if(!gmH)gmH='<tr><td colspan="6" class="wr-empty">Không có data nhóm SP cho tháng</td></tr>';
     document.getElementById("wr-group-month-table").innerHTML=gmH;
     document.getElementById("wr-group-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
 
