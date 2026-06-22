@@ -1173,6 +1173,76 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         active = " active" if m == last_month else ""
         month_buttons += f'        <button class="month-btn{active}" data-month="{m}">{m}</button>\n'
 
+    # === Block ①B (so sánh cùng kỳ) + ①C (mục tiêu tăng trưởng) — tự tính từ daily_json ===
+    import calendar as _cal
+    GROWTH_TARGET_PCT = 10  # mục tiêu tăng trưởng tháng này so tháng trước
+    def _mrev(_y, _m, _d1, _d2):
+        _pre = f"{_y:04d}-{_m:02d}-"
+        _s = 0
+        for _pl in daily_json.values():
+            for _fd, _r in _pl.items():
+                if _fd.startswith(_pre):
+                    _dd = int(_fd[8:10])
+                    if _d1 <= _dd <= _d2:
+                        _s += _r.get("revenue", 0)
+        return _s
+    def _fvnd(_v):
+        return f"{int(round(_v)):,}".replace(",", ".")
+    growth_block = ""
+    if sorted_dates:
+        cy, cm, cd = int(last_date[:4]), int(last_date[5:7]), int(last_date[8:10])
+        py, pm = (cy - 1, 12) if cm == 1 else (cy, cm - 1)
+        dim_cur = _cal.monthrange(cy, cm)[1]
+        dim_prev = _cal.monthrange(py, pm)[1]
+        prev_full = _mrev(py, pm, 1, dim_prev)
+        prev_same = _mrev(py, pm, 1, cd)
+        cur_td = _mrev(cy, cm, 1, cd)
+        mom = ((cur_td - prev_same) / prev_same * 100) if prev_same else 0
+        target = prev_full * (1 + GROWTH_TARGET_PCT / 100)
+        per_day_t = target / dim_cur if dim_cur else 0
+        cum_t = per_day_t * cd
+        gap = cur_td - cum_t
+        pct_plan = (cur_td / cum_t * 100) if cum_t else 0
+        remain_d = dim_cur - cd
+        remain_need = target - cur_td
+        per_day_need = (remain_need / remain_d) if remain_d > 0 else 0
+        cur_pace = (cur_td / cd) if cd else 0
+        forecast = cur_pace * dim_cur
+        mom_color = "#1e7d34" if mom >= 0 else "#c0392b"
+        gap_color = "#1e7d34" if gap >= 0 else "#c0392b"
+        growth_block = f'''
+            <div class="section-title">① B 營收同期比較 So Sánh Doanh Thu Cùng Kỳ (DT từ sàn — tự tính từ đơn hàng)</div>
+            <div class="table-container">
+                <div class="wr-meta">Tháng {cm}/{cy} tính đến ngày {cd} &middot; so với cùng kỳ tháng {pm}/{py} (ngày 1&ndash;{cd})</div>
+                <table>
+                    <thead><tr><th>項目 Chỉ tiêu</th><th class="right">營收 Doanh thu</th></tr></thead>
+                    <tbody>
+                        <tr><td>Cùng kỳ tháng trước (1&ndash;{cd}/{pm})</td><td class="right">{_fvnd(prev_same)}</td></tr>
+                        <tr><td>Tháng này đến nay (1&ndash;{cd}/{cm})</td><td class="right"><b>{_fvnd(cur_td)}</b></td></tr>
+                        <tr><td><b>環比 Tăng trưởng cùng kỳ (MoM)</b></td><td class="right"><b style="color:{mom_color}">{mom:+.1f}%</b></td></tr>
+                        <tr><td>Cả tháng trước (tháng {pm} đầy đủ)</td><td class="right">{_fvnd(prev_full)}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="section-title">① C 增長目標 Mục Tiêu Tăng Trưởng (T{cm} vs T{pm} &middot; mục tiêu +{GROWTH_TARGET_PCT}%)</div>
+            <div class="table-container">
+                <div class="wr-meta">🎯 Mục tiêu = doanh thu tháng {pm} ({_fvnd(prev_full)}) &times; {100 + GROWTH_TARGET_PCT}%</div>
+                <table>
+                    <thead><tr><th>項目 Chỉ tiêu</th><th class="right">數值 Giá trị</th></tr></thead>
+                    <tbody>
+                        <tr><td>Mục tiêu doanh thu tháng {cm}</td><td class="right"><b>{_fvnd(target)}</b></td></tr>
+                        <tr><td>Cần trung bình / ngày ({dim_cur} ngày)</td><td class="right">{_fvnd(per_day_t)}</td></tr>
+                        <tr><td>Kế hoạch lũy kế đến ngày {cd}</td><td class="right">{_fvnd(cum_t)}</td></tr>
+                        <tr><td>Thực đạt đến ngày {cd}</td><td class="right"><b>{_fvnd(cur_td)}</b> ({pct_plan:.0f}% kế hoạch)</td></tr>
+                        <tr><td><b>差額 Chênh lệch tiến độ</b></td><td class="right"><b style="color:{gap_color}">{_fvnd(gap)}</b></td></tr>
+                        <tr><td>Còn thiếu để đạt mục tiêu</td><td class="right">{_fvnd(remain_need)} ({remain_d} ngày còn lại)</td></tr>
+                        <tr><td><b>Cần đạt / ngày ({remain_d} ngày cuối)</b></td><td class="right"><b>{_fvnd(per_day_need)}</b></td></tr>
+                        <tr><td>Nhịp hiện tại / ngày</td><td class="right">{_fvnd(cur_pace)}</td></tr>
+                        <tr><td>預測 Dự báo cả tháng (theo nhịp hiện tại)</td><td class="right">{_fvnd(forecast)}</td></tr>
+                    </tbody>
+                </table>
+            </div>'''
+
     html = f'''<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -1556,7 +1626,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 <div class="compare-info" id="wr-compare-info"></div>
             </div>
 
-            <div class="section-title">① 營收總覽 Doanh Thu (Xuất kho · Sàn · Quyết toán)</div>
+            <div class="section-title">① A 營收總覽 Doanh Thu Từ Các Sàn (Xuất kho · Sàn · Quyết toán)</div>
             <div class="table-container">
                 <div class="wr-meta" id="wr-revenue-meta"></div>
                 <table>
@@ -1574,6 +1644,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </table>
                 <div class="wr-meta" style="font-size:0.85em;color:var(--text-soft);margin-top:8px;">💡 Bấm vào ô <b>Doanh thu Quyết toán</b> của 1 kênh để xem chi tiết phí (Tổng phí, Tỷ lệ chi phí / Doanh thu).</div>
             </div>
+{growth_block}
 
             <div class="section-title">② 暢銷產品 Top 10 SP Bán Chạy (Tuần &amp; Tháng)</div>
             <div class="wr-grid-2">
@@ -3108,7 +3179,7 @@ def _generate_platform_tabs():
 def main():
     output_path = sys.argv[1] if len(sys.argv) > 1 else "/sessions/relaxed-laughing-hamilton/mnt/Loho_Dashboard/Dashboard_Loho_House_2026.html"
 
-    print("=== Loho House Dashboard Updater v2 ===")
+    print("=== Loho House Dashboard Updater v2.1 ===")
     print(f"Output: {output_path}")
     print()
 
