@@ -1173,74 +1173,171 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         active = " active" if m == last_month else ""
         month_buttons += f'        <button class="month-btn{active}" data-month="{m}">{m}</button>\n'
 
-    # === Block ①B (so sánh cùng kỳ) + ①C (mục tiêu tăng trưởng) — tự tính từ daily_json ===
+    # === Block ①B (ma trận DT theo kỳ) + ①C (biểu đồ trái + hộp số liệu phải) ===
     import calendar as _cal
-    GROWTH_TARGET_PCT = 10  # mục tiêu tăng trưởng tháng này so tháng trước
-    def _mrev(_y, _m, _d1, _d2):
-        _pre = f"{_y:04d}-{_m:02d}-"
+    from datetime import date as _date, timedelta as _td
+    GROWTH_TARGET_PCT = 10
+    def _drev(_a, _b):
         _s = 0
         for _pl in daily_json.values():
             for _fd, _r in _pl.items():
-                if _fd.startswith(_pre):
-                    _dd = int(_fd[8:10])
-                    if _d1 <= _dd <= _d2:
-                        _s += _r.get("revenue", 0)
+                if _a <= _fd <= _b:
+                    _s += _r.get("revenue", 0)
         return _s
+    def _mrev(_y, _m, _d1, _d2):
+        return _drev(f"{_y:04d}-{_m:02d}-{_d1:02d}", f"{_y:04d}-{_m:02d}-{_d2:02d}")
     def _fvnd(_v):
         return f"{int(round(_v)):,}".replace(",", ".")
+    def _tr(_v):
+        return f"{_v/1000000:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " tr"
+    def _shift_month(_dt, _n):
+        _mm = _dt.month - 1 + _n
+        _yy = _dt.year + _mm // 12
+        _mm = _mm % 12 + 1
+        _dd = min(_dt.day, _cal.monthrange(_yy, _mm)[1])
+        return _date(_yy, _mm, _dd)
+    def _pct(_cur, _base):
+        return ((_cur - _base) / _base * 100) if _base else 0
+    def _badge(_p):
+        _c = "#1e7d34" if _p >= 0 else "#c0392b"
+        _ar = "&#9650;" if _p >= 0 else "&#9660;"
+        return f'<b style="color:{_c}">{_ar} {_p:+.1f}%</b>'
+    def _num(_x):
+        if _x is None or _x == "":
+            return None
+        if isinstance(_x, (int, float)):
+            return float(_x)
+        try:
+            return float(str(_x).replace(".", "").replace(",", "."))
+        except Exception:
+            return None
     growth_block = ""
-    if sorted_dates:
+    _wk = None
+    if weekly_data and weekly_data.get("weeks"):
+        _wk = list(weekly_data["weeks"].values())[0]
+    ws = we = None
+    if sorted_dates and _wk and _wk.get("start_date") and _wk.get("end_date"):
+        try:
+            ws = _date.fromisoformat(_wk["start_date"]); we = _date.fromisoformat(_wk["end_date"])
+        except Exception:
+            ws = we = None
+    if sorted_dates and ws and we:
+        wk_label = _wk.get("label", "Tuần này")
+        def _fd2(_d): return _d.strftime("%d/%m")
+        xk_this = _drev(ws.isoformat(), we.isoformat())
+        lw_s, lw_e = ws - _td(days=7), we - _td(days=7)
+        xk_last = _drev(lw_s.isoformat(), lw_e.isoformat())
         cy, cm, cd = int(last_date[:4]), int(last_date[5:7]), int(last_date[8:10])
         py, pm = (cy - 1, 12) if cm == 1 else (cy, cm - 1)
         dim_cur = _cal.monthrange(cy, cm)[1]
         dim_prev = _cal.monthrange(py, pm)[1]
-        prev_full = _mrev(py, pm, 1, dim_prev)
-        prev_same = _mrev(py, pm, 1, cd)
-        cur_td = _mrev(cy, cm, 1, cd)
-        mom = ((cur_td - prev_same) / prev_same * 100) if prev_same else 0
-        target = prev_full * (1 + GROWTH_TARGET_PCT / 100)
+        xk_mtd = _mrev(cy, cm, 1, cd)
+        xk_same = _mrev(py, pm, 1, cd)
+        xk_full = _mrev(py, pm, 1, dim_prev)
+        xk_chenh = xk_mtd - xk_full
+        mom = _pct(xk_mtd, xk_same)
+        _sett = (_wk.get("settlement") or {})
+        _tusan = sum(v for v in (_num(_sett.get(k)) for k in ["shopee_tusan","tiktok_tusan","lazada_tusan","website_tusan"]) if v)
+        _settled = sum(v for v in (_num(_sett.get(k)) for k in ["shopee_settled","tiktok_settled","lazada_settled","website_settled"]) if v)
+        _none = '<span style="color:var(--text-soft)">&mdash;</span>'
+        _chenh_html = f'<b style="color:{"#1e7d34" if xk_chenh >= 0 else "#c0392b"}">{_fvnd(xk_chenh)}</b>'
+        target = xk_full * (1 + GROWTH_TARGET_PCT / 100)
         per_day_t = target / dim_cur if dim_cur else 0
         cum_t = per_day_t * cd
-        gap = cur_td - cum_t
-        pct_plan = (cur_td / cum_t * 100) if cum_t else 0
+        pct_plan = (xk_mtd / cum_t * 100) if cum_t else 0
         remain_d = dim_cur - cd
-        remain_need = target - cur_td
+        remain_need = target - xk_mtd
         per_day_need = (remain_need / remain_d) if remain_d > 0 else 0
-        cur_pace = (cur_td / cd) if cd else 0
+        cur_pace = (xk_mtd / cd) if cd else 0
         forecast = cur_pace * dim_cur
-        mom_color = "#1e7d34" if mom >= 0 else "#c0392b"
-        gap_color = "#1e7d34" if gap >= 0 else "#c0392b"
+        _daysum = {}
+        for _pl in daily_json.values():
+            for _fd, _r in _pl.items():
+                if _fd[:7] == f"{cy:04d}-{cm:02d}":
+                    _dd = int(_fd[8:10]); _daysum[_dd] = _daysum.get(_dd, 0) + _r.get("revenue", 0)
+        # ----- màu chủ đạo -----
+        _C_BE = "#CBB994"   # be - mục tiêu
+        _C_OK = "#27ae60"   # xanh - đạt/vượt
+        _C_NO = "#e74c3c"   # đỏ - chưa đạt
+        # ----- Hộp số liệu (stat cards) -----
+        _pp_color = _C_OK if pct_plan >= 100 else ("#d59a1e" if pct_plan >= 80 else _C_NO)
+        _cards = [
+            (f"{pct_plan:.0f}%", "Đạt kế hoạch tháng", _pp_color),
+            (_tr(target), f"Mục tiêu T{cm} (+{GROWTH_TARGET_PCT}%)", "#7a5c33"),
+            (_tr(xk_mtd), "Thực đạt đến nay", _C_OK),
+            (_tr(remain_need), f"Còn thiếu ({remain_d} ngày)", _C_NO),
+            (_tr(per_day_need), "Cần đạt / ngày", _C_NO),
+            (f"{mom:+.1f}%", "Tăng trưởng cùng kỳ (MoM)", _C_OK if mom >= 0 else _C_NO),
+        ]
+        _cards_html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">' + "".join(
+            f'<div style="background:#f4ede1;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.45em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#9a8f7d;margin-top:4px">{_lbl}</div></div>'
+            for _v, _lbl, _c in _cards) + '</div>'
+        # ----- Biểu đồ thanh ngang: mục tiêu vs thực đạt theo tuần -----
+        _wkdefs = [("Tuần 1", 1, 7), ("Tuần 2", 8, 14), ("Tuần 3", 15, 21), ("Tuần 4", 22, 28), ("Tuần 5", 29, dim_cur)]
+        _wd = []
+        for _nm, _a, _b in _wkdefs:
+            if _a > dim_cur:
+                continue
+            _b2 = min(_b, dim_cur)
+            _tgt = per_day_t * (_b2 - _a + 1)
+            _act = sum(_daysum.get(_d, 0) for _d in range(_a, _b2 + 1))
+            _wd.append((f"{_nm} ({_a}-{_b2})", _tgt, _act))
+        _maxv = max([max(_t, _a) for _, _t, _a in _wd] + [1])
+        _BW, _bleft, _bright, _btop = 560, 92, 92, 10
+        _barA = _BW - _bleft - _bright
+        _rowH, _barH, _ggap = 50, 16, 5
+        _BH = _btop * 2 + len(_wd) * _rowH
+        _bars = ""
+        for _i, (_nm, _t, _a) in enumerate(_wd):
+            _y = _btop + _i * _rowH
+            _wt = (_t / _maxv) * _barA
+            _wa = (_a / _maxv) * _barA
+            _y2 = _y + _barH + _ggap
+            _acol = _C_OK if _a >= _t else _C_NO
+            _bars += (
+                f'<text x="6" y="{_y + _barH + 4:.0f}" font-size="11.5" fill="#5c4f3a" font-weight="600">{_nm}</text>'
+                f'<rect x="{_bleft}" y="{_y:.0f}" width="{max(_wt,0.6):.1f}" height="{_barH}" rx="3" fill="{_C_BE}"/>'
+                f'<text x="{_bleft + _wt + 6:.1f}" y="{_y + _barH - 3:.0f}" font-size="10.5" fill="#9a8f7d">{_tr(_t)}</text>'
+                f'<rect x="{_bleft}" y="{_y2:.0f}" width="{max(_wa,0.6):.1f}" height="{_barH}" rx="3" fill="{_acol}"/>'
+                f'<text x="{_bleft + _wa + 6:.1f}" y="{_y2 + _barH - 3:.0f}" font-size="10.5" fill="{_acol}" font-weight="600">{_tr(_a)}</text>'
+            )
+        _bars_svg = f'<svg viewBox="0 0 {_BW} {_BH}" style="width:100%;height:auto">{_bars}</svg>'
+        _bar_legend = f'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.84em;margin:2px 0 8px"><span style="color:{_C_BE}">&#9632; Mục tiêu tuần</span><span style="color:{_C_OK}">&#9632; Đạt / vượt</span><span style="color:{_C_NO}">&#9632; Chưa đạt</span></div>'
         growth_block = f'''
-            <div class="section-title">① B 營收同期比較 So Sánh Doanh Thu Cùng Kỳ (DT từ sàn — tự tính từ đơn hàng)</div>
+            <div class="section-title">&#9313; B So S&#225;nh Doanh Thu Theo K&#7923; (DT xu&#7845;t kho t&#7921; t&#237;nh t&#7915; &#273;&#417;n h&#224;ng)</div>
             <div class="table-container">
-                <div class="wr-meta">Tháng {cm}/{cy} tính đến ngày {cd} &middot; so với cùng kỳ tháng {pm}/{py} (ngày 1&ndash;{cd})</div>
+                <div class="wr-meta">{wk_label} &middot; DT t&#7915; s&#224;n / quy&#7871;t to&#225;n l&#7845;y t&#7915; s&#7889; nh&#7853;p tay (ch&#7881; c&#243; tu&#7847;n n&#224;y)</div>
                 <table>
-                    <thead><tr><th>項目 Chỉ tiêu</th><th class="right">營收 Doanh thu</th></tr></thead>
+                    <thead><tr>
+                        <th>Ch&#7881; ti&#234;u</th>
+                        <th class="right">Tu&#7847;n n&#224;y<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">{_fd2(ws)}-{_fd2(we)}</span></th>
+                        <th class="right">Tu&#7847;n tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">{_fd2(lw_s)}-{_fd2(lw_e)}</span></th>
+                        <th class="right">Th&#225;ng n&#224;y<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">1-{cd}/{cm}</span></th>
+                        <th class="right">C&#249;ng k&#7923; th&#225;ng tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">1-{cd}/{pm}</span></th>
+                        <th class="right">T&#7893;ng th&#225;ng tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">T{pm} &#273;&#7847;y &#273;&#7911;</span></th>
+                        <th class="right">Ch&#234;nh l&#7879;ch<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">Th&#225;ng n&#224;y - T&#7893;ng T{pm}</span></th>
+                    </tr></thead>
                     <tbody>
-                        <tr><td>Cùng kỳ tháng trước (1&ndash;{cd}/{pm})</td><td class="right">{_fvnd(prev_same)}</td></tr>
-                        <tr><td>Tháng này đến nay (1&ndash;{cd}/{cm})</td><td class="right"><b>{_fvnd(cur_td)}</b></td></tr>
-                        <tr><td><b>環比 Tăng trưởng cùng kỳ (MoM)</b></td><td class="right"><b style="color:{mom_color}">{mom:+.1f}%</b></td></tr>
-                        <tr><td>Cả tháng trước (tháng {pm} đầy đủ)</td><td class="right">{_fvnd(prev_full)}</td></tr>
+                        <tr><td><b>DT File xu&#7845;t kho</b></td><td class="right">{_fvnd(xk_this)}</td><td class="right">{_fvnd(xk_last)}</td><td class="right"><b>{_fvnd(xk_mtd)}</b></td><td class="right">{_fvnd(xk_same)}</td><td class="right">{_fvnd(xk_full)}</td><td class="right">{_chenh_html}</td></tr>
+                        <tr><td>DT t&#7915; s&#224;n</td><td class="right">{_fvnd(_tusan) if _tusan else _none}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td></tr>
+                        <tr><td>DT quy&#7871;t to&#225;n</td><td class="right">{_fvnd(_settled) if _settled else _none}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td></tr>
+                        <tr><td><b>T&#259;ng tr&#432;&#7903;ng (MoM)</b></td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_badge(mom)}</td><td class="right">{_none}</td><td class="right">{_none}</td><td class="right">{_none}</td></tr>
                     </tbody>
                 </table>
             </div>
-            <div class="section-title">① C 增長目標 Mục Tiêu Tăng Trưởng (T{cm} vs T{pm} &middot; mục tiêu +{GROWTH_TARGET_PCT}%)</div>
+            <div class="section-title">&#9313; C M&#7909;c Ti&#234;u T&#259;ng Tr&#432;&#7903;ng T{cm} (+{GROWTH_TARGET_PCT}% vs T{pm})</div>
             <div class="table-container">
-                <div class="wr-meta">🎯 Mục tiêu = doanh thu tháng {pm} ({_fvnd(prev_full)}) &times; {100 + GROWTH_TARGET_PCT}%</div>
-                <table>
-                    <thead><tr><th>項目 Chỉ tiêu</th><th class="right">數值 Giá trị</th></tr></thead>
-                    <tbody>
-                        <tr><td>Mục tiêu doanh thu tháng {cm}</td><td class="right"><b>{_fvnd(target)}</b></td></tr>
-                        <tr><td>Cần trung bình / ngày ({dim_cur} ngày)</td><td class="right">{_fvnd(per_day_t)}</td></tr>
-                        <tr><td>Kế hoạch lũy kế đến ngày {cd}</td><td class="right">{_fvnd(cum_t)}</td></tr>
-                        <tr><td>Thực đạt đến ngày {cd}</td><td class="right"><b>{_fvnd(cur_td)}</b> ({pct_plan:.0f}% kế hoạch)</td></tr>
-                        <tr><td><b>差額 Chênh lệch tiến độ</b></td><td class="right"><b style="color:{gap_color}">{_fvnd(gap)}</b></td></tr>
-                        <tr><td>Còn thiếu để đạt mục tiêu</td><td class="right">{_fvnd(remain_need)} ({remain_d} ngày còn lại)</td></tr>
-                        <tr><td><b>Cần đạt / ngày ({remain_d} ngày cuối)</b></td><td class="right"><b>{_fvnd(per_day_need)}</b></td></tr>
-                        <tr><td>Nhịp hiện tại / ngày</td><td class="right">{_fvnd(cur_pace)}</td></tr>
-                        <tr><td>預測 Dự báo cả tháng (theo nhịp hiện tại)</td><td class="right">{_fvnd(forecast)}</td></tr>
-                    </tbody>
-                </table>
+                <div class="wr-meta">&#127919; M&#7909;c ti&#234;u = DT T{pm} ({_fvnd(xk_full)}) &times; {100 + GROWTH_TARGET_PCT}% = <b>{_fvnd(target)}</b></div>
+                <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+                    <div style="flex:1 1 360px;min-width:300px">
+                        <div class="chart-title" style="text-align:left">M&#7909;c ti&#234;u vs Th&#7921;c &#273;&#7841;t theo tu&#7847;n</div>
+                        {_bar_legend}
+                        {_bars_svg}
+                    </div>
+                    <div style="flex:0 0 308px;min-width:240px">
+                        {_cards_html}
+                    </div>
+                </div>
             </div>'''
 
     html = f'''<!DOCTYPE html>
