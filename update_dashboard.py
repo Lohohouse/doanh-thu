@@ -180,6 +180,9 @@ def _parse_weekly_csv(csv_text):
                 "⑩": "ads_category",
             }
             section = section_map.get(col_a[0], "")
+            _nlh = _norm_label(col_a)
+            if col_a[0] == "②" and "danh muc" in _nlh:
+                section = "ads_cat_shopee" if "shopee" in _nlh else ("ads_cat_tiktok" if "tiktok" in _nlh else section)
             rows_by_section.setdefault(section, [])
             continue
         # Detect THONG TIN TUAN section
@@ -192,7 +195,7 @@ def _parse_weekly_csv(csv_text):
             continue
         # Skip column-header subhead rows (when label is generic)
         norm_label = _norm_label(col_a)
-        if norm_label in ("chi tieu", "muc", "key", "name", "label"):
+        if norm_label in ("chi tieu", "muc", "key", "name", "label") and not section.startswith("ads_cat"):
             continue
 
         if section:
@@ -464,27 +467,35 @@ def _parse_weekly_csv(csv_text):
         },
     }
 
-    # === ADS CATEGORY (chi phí QC theo danh mục SP) — mục ⑩ trong sheet ===
-    def _catkey5b(_nl):
-        if "san nhua" in _nl or "gia go" in _nl: return "san"
-        if "son lot" in _nl: return "son_lot"
-        if "son tuong" in _nl: return "son_tuong"
-        if "cong cu" in _nl: return "congcu"
-        if "decal" in _nl: return "decal"
-        return "khac"
-    ads_category = {}
-    for _nl, _ol, _cols in rows_by_section.get("ads_category", []):
-        _hk = "shopee" if "shopee" in _nl else ("tiktok" if ("tiktok" in _nl or "tik tok" in _nl) else None)
-        if _hk is None:
-            continue
-        _ck = _catkey5b(_nl)
-        ads_category.setdefault(_ck, {})[_hk] = {
-            "cp": num_or_none(_cols[0]),
-            "ds": num_or_none(_cols[1]),
-            "don": num_or_none(_cols[2]),
-            "sp": num_or_none(_cols[3]),
-        }
-
+    # === ADS CATEGORY (chi phí QC theo danh mục SP) — mục ② B / ② C ===
+    def _parse_ads_cat(_sec):
+        _cats = []; _chi = []; _ds = []; _don = []; _tyle = []
+        for _nl, _ol, _cols in rows_by_section.get(_sec, []):
+            if "ty le" in _nl:
+                _tyle = list(_cols)
+            if _nl in ("chi tieu", "muc", "danh muc"):
+                _cats = list(_cols)
+            elif "chi phi quang cao" in _nl:
+                _chi = list(_cols)
+            elif "doanh so" in _nl:
+                _ds = list(_cols)
+            elif "so don" in _nl:
+                _don = list(_cols)
+        _out = []
+        for _i in range(4):
+            _cn = (_cats[_i].strip() if _i < len(_cats) and _cats[_i] else "")
+            if not _cn:
+                continue
+            _out.append({
+                "cat": _cn,
+                "cp": num_or_none(_chi[_i]) if _i < len(_chi) else None,
+                "ds": num_or_none(_ds[_i]) if _i < len(_ds) else None,
+                "don": num_or_none(_don[_i]) if _i < len(_don) else None,
+                "tyle": (_tyle[_i].strip() if (_i < len(_tyle) and _tyle[_i]) else None),
+            })
+        return _out
+    ads_cat_shopee = _parse_ads_cat("ads_cat_shopee")
+    ads_cat_tiktok = _parse_ads_cat("ads_cat_tiktok")
     return {
         "current_week": code,
         "weeks": {
@@ -501,7 +512,8 @@ def _parse_weekly_csv(csv_text):
                 "complaints": complaints,
                 "complaint_ratio": complaint_ratio,
                 "review_plan": review_plan,
-                "ads_category": ads_category,
+                "ads_cat_shopee": ads_cat_shopee,
+                "ads_cat_tiktok": ads_cat_tiktok,
             }
         }
     }
@@ -1095,7 +1107,7 @@ def build_data_json(platforms_data, categories_data):
             }
 
             # Top 5 products by revenue
-            products_by_rev = sorted(m["product_revenue"].items(), key=lambda x: -x[1])[:5]
+            products_by_rev = sorted(m["product_revenue"].items(), key=lambda x: -x[1])[:20]
             products_list = [{"name": name, "qty": m["products"].get(name, 0), "revenue": int(rev)} for name, rev in products_by_rev]
 
             fee_pct = round(m["fees"] / m["revenue"] * 100, 1) if m["revenue"] > 0 else 0
@@ -1132,7 +1144,7 @@ def build_daily_json(daily_data, daily_categories_data):
                 "decor": int(day_cats.get("decor", 0)),
                 "other": int(day_cats.get("other", 0)),
             }
-            products_by_rev = sorted(d["product_revenue"].items(), key=lambda x: -x[1])[:5]
+            products_by_rev = sorted(d["product_revenue"].items(), key=lambda x: -x[1])[:20]
             products_list = [{"name": name, "qty": d["products"].get(name, 0), "revenue": int(rev)} for name, rev in products_by_rev]
             platform_daily[fd] = {
                 "orders": d["orders"],
@@ -1418,30 +1430,30 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </div>
             </div>{_t7_html}'''
 
-    # === 5B: chi phí QC theo danh mục SP (từ weekly_data) ===
+    # === 5B/5C: chi phí QC theo danh mục SP (Shopee / TikTok) ===
     ads5b_block = ""
     _wk5b = list(weekly_data["weeks"].values())[0] if (weekly_data and weekly_data.get("weeks")) else None
-    _ac5 = (_wk5b or {}).get("ads_category") or {}
-    _cats5b = [("san", "Sàn nhựa giả gỗ"), ("son_tuong", "Sơn tường 1kg"), ("congcu", "Công cụ sơn"), ("son_lot", "Sơn lót 1kg"), ("decal", "Decal (bếp/nội thất/tường)"), ("khac", "Khác")]
-    def _f0b(_v):
+    def _fmt5(_v):
         return f"{int(round(_v)):,}".replace(",", ".") if (_v is not None and _v != "") else '<span style="color:var(--text-soft)">&mdash;</span>'
-    _rows5b = ""
-    for _ck, _clabel in _cats5b:
-        for _hk, _hlabel in [("shopee", "Shopee"), ("tiktok", "TikTok")]:
-            _dd = (_ac5.get(_ck) or {}).get(_hk) or {}
-            _cp = _dd.get("cp"); _ds = _dd.get("ds"); _don = _dd.get("don"); _sp = _dd.get("sp")
-            _ratio = (f"{_cp/_ds*100:.1f}%" if (_cp and _ds) else '<span style="color:var(--text-soft)">&mdash;</span>')
-            _rows5b += f'<tr><td>{_clabel}</td><td>{_hlabel}</td><td class="right">{_f0b(_cp)}</td><td class="right">{_f0b(_ds)}</td><td class="right">{_ratio}</td><td class="right">{_f0b(_don)}</td><td class="right">{_f0b(_sp)}</td></tr>'
-    ads5b_block = f'''
-            <div class="section-title">⑤ B 廣告分類 Chi Phí Quảng Cáo Danh Mục SP Theo Tuần</div>
+    def _ads_cat_table(_letter, _chan_label, _rows):
+        if not _rows:
+            _head = '<th>Chỉ tiêu</th>'
+            _body = f'<tr><td colspan="6" style="color:var(--text-soft);text-align:center;padding:14px">Chưa có dữ liệu — nhập vào Google Sheet mục ② {_letter} ({_chan_label})</td></tr>'
+        else:
+            _head = '<th>Chỉ tiêu</th>' + "".join(f'<th class="right">{_r["cat"]}</th>' for _r in _rows)
+            _l1 = '<tr><td><b>Chi phí QC</b></td>' + "".join(f'<td class="right">{_fmt5(_r["cp"])}</td>' for _r in _rows) + '</tr>'
+            _l2 = '<tr><td>Doanh số QC</td>' + "".join(f'<td class="right">{_fmt5(_r["ds"])}</td>' for _r in _rows) + '</tr>'
+            _l3 = '<tr><td><b>Tỷ lệ CP/Tổng DS</b></td>' + "".join(f'<td class="right">{(_r["tyle"] if _r.get("tyle") else "&mdash;")}</td>' for _r in _rows) + '</tr>'
+            _l4 = '<tr><td>Số đơn từ QC</td>' + "".join(f'<td class="right">{_fmt5(_r["don"])}</td>' for _r in _rows) + '</tr>'
+            _body = _l1 + _l2 + _l3 + _l4
+        return f'''
+            <div class="section-title">⑤ {_letter} 廣告分類 Chi Phí QC Danh Mục SP Theo Tuần &mdash; {_chan_label}</div>
             <div class="table-container">
-                <div class="wr-meta">Nhập tay vào Google Sheet weekly_report, mục ⑩ CHI PHÍ QC DANH MỤC SP (tuần này). Tỷ lệ CP/DS dashboard tự tính.</div>
-                <table>
-                    <thead><tr><th>類別 Danh mục</th><th>通路 Kênh</th><th class="right">Chi phí QC</th><th class="right">Doanh số QC</th><th class="right">Tỷ lệ CP/DS</th><th class="right">Số đơn</th><th class="right">Số SP</th></tr></thead>
-                    <tbody>{_rows5b}</tbody>
-                </table>
+                <table><thead><tr>{_head}</tr></thead><tbody>{_body}</tbody></table>
             </div>'''
-
+    _s5 = (_wk5b or {}).get("ads_cat_shopee") or []
+    _t5 = (_wk5b or {}).get("ads_cat_tiktok") or []
+    ads5b_block = _ads_cat_table("B", "Shopee", _s5) + _ads_cat_table("C", "TikTok", _t5)
     html = f'''<!DOCTYPE html>
 <html lang="vi">
 <head>
