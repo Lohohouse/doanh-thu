@@ -177,7 +177,7 @@ def _parse_weekly_csv(csv_text):
                 "⑤": "customer_care", "⑥": "reviews",
                 "⑦": "complaints", "⑧": "complaint_ratio",
                 "⑨": "review_plan",
-                "⑩": "extra",
+                "⑩": "ads_category",
             }
             section = section_map.get(col_a[0], "")
             rows_by_section.setdefault(section, [])
@@ -464,6 +464,27 @@ def _parse_weekly_csv(csv_text):
         },
     }
 
+    # === ADS CATEGORY (chi phí QC theo danh mục SP) — mục ⑩ trong sheet ===
+    def _catkey5b(_nl):
+        if "san nhua" in _nl or "gia go" in _nl: return "san"
+        if "son lot" in _nl: return "son_lot"
+        if "son tuong" in _nl: return "son_tuong"
+        if "cong cu" in _nl: return "congcu"
+        if "decal" in _nl: return "decal"
+        return "khac"
+    ads_category = {}
+    for _nl, _ol, _cols in rows_by_section.get("ads_category", []):
+        _hk = "shopee" if "shopee" in _nl else ("tiktok" if ("tiktok" in _nl or "tik tok" in _nl) else None)
+        if _hk is None:
+            continue
+        _ck = _catkey5b(_nl)
+        ads_category.setdefault(_ck, {})[_hk] = {
+            "cp": num_or_none(_cols[0]),
+            "ds": num_or_none(_cols[1]),
+            "don": num_or_none(_cols[2]),
+            "sp": num_or_none(_cols[3]),
+        }
+
     return {
         "current_week": code,
         "weeks": {
@@ -480,6 +501,7 @@ def _parse_weekly_csv(csv_text):
                 "complaints": complaints,
                 "complaint_ratio": complaint_ratio,
                 "review_plan": review_plan,
+                "ads_category": ads_category,
             }
         }
     }
@@ -1303,6 +1325,62 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             )
         _bars_svg = f'<svg viewBox="0 0 {_BW} {_BH}" style="width:100%;height:auto">{_bars}</svg>'
         _bar_legend = f'<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:0.84em;margin:2px 0 8px"><span style="color:{_C_BE}">&#9632; Mục tiêu tuần</span><span style="color:{_C_OK}">&#9632; Đạt / vượt</span><span style="color:{_C_NO}">&#9632; Chưa đạt</span></div>'
+        # ----- ①C · Mục tiêu tăng trưởng THÁNG SAU (T+1) -----
+        nmn = cm + 1; nyn = cy
+        if nmn > 12:
+            nmn = 1; nyn = cy + 1
+        dim_next = _cal.monthrange(nyn, nmn)[1]
+        _base_complete = (cd >= dim_cur)
+        base_next = xk_mtd if _base_complete else forecast
+        _base_lbl = "thực tế" if _base_complete else "dự báo"
+        target_n = base_next * (1 + GROWTH_TARGET_PCT / 100)
+        per_day_n = target_n / dim_next if dim_next else 0
+        _nwk = [("Tuần 1", 1, 7), ("Tuần 2", 8, 14), ("Tuần 3", 15, 21), ("Tuần 4", 22, 28), ("Tuần 5", 29, dim_next)]
+        _nwd = []
+        for _lb, _a, _b in _nwk:
+            if _a > dim_next:
+                continue
+            _b2 = min(_b, dim_next)
+            _nwd.append((f"{_lb} ({_a}-{_b2})", per_day_n * (_b2 - _a + 1)))
+        _nmaxv = max([_t for _, _t in _nwd] + [1])
+        _NW, _nbl, _nbr, _nbt = 560, 92, 96, 8
+        _nbA = _NW - _nbl - _nbr
+        _nrowH, _nbarH = 34, 18
+        _nBH = _nbt * 2 + len(_nwd) * _nrowH
+        _nbars = ""
+        for _i, (_label, _t) in enumerate(_nwd):
+            _y = _nbt + _i * _nrowH
+            _w = (_t / _nmaxv) * _nbA
+            _nbars += (
+                f'<text x="6" y="{_y + _nbarH - 4:.0f}" font-size="11.5" fill="#5c4f3a" font-weight="600">{_label}</text>'
+                f'<rect x="{_nbl}" y="{_y:.0f}" width="{max(_w,0.6):.1f}" height="{_nbarH}" rx="3" fill="{_C_BE}"/>'
+                f'<text x="{_nbl + _w + 6:.1f}" y="{_y + _nbarH - 5:.0f}" font-size="10.5" fill="#9a8f7d">{_tr(_t)}</text>'
+            )
+        _nbars_svg = f'<svg viewBox="0 0 {_NW} {_nBH}" style="width:100%;height:auto">{_nbars}</svg>'
+        _t7_cards = [
+            (_tr(target_n), f"Mục tiêu T{nmn} (+{GROWTH_TARGET_PCT}%)", "#7a5c33"),
+            (_tr(per_day_n), "Cần đạt / ngày", "#7a5c33"),
+            (_tr(per_day_n * 7), "Trung bình / tuần", "#7a5c33"),
+            (_tr(base_next), f"Cơ sở T{cm} ({_base_lbl})", "#9a7b3f"),
+        ]
+        _t7_cards_html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">' + "".join(
+            f'<div style="background:#f4ede1;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.4em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#9a8f7d;margin-top:4px">{_lbl}</div></div>'
+            for _v, _lbl, _c in _t7_cards) + '</div>'
+        _t7_html = f'''
+            <div class="section-title">&#9313; C &middot; M&#7909;c Ti&#234;u T&#259;ng Tr&#432;&#7903;ng Th&#225;ng Sau T{nmn} (+{GROWTH_TARGET_PCT}% vs T{cm})</div>
+            <div class="table-container">
+                <div class="wr-meta">&#127919; M&#7909;c ti&#234;u T{nmn} = DT T{cm} ({_fvnd(base_next)}, {_base_lbl}) &times; {100 + GROWTH_TARGET_PCT}% = <b>{_fvnd(target_n)}</b> &middot; k&#7871; ho&#7841;ch ph&#226;n b&#7893; theo tu&#7847;n:</div>
+                <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+                    <div style="flex:1 1 360px;min-width:300px">
+                        <div class="chart-title" style="text-align:left">K&#7871; ho&#7841;ch m&#7909;c ti&#234;u theo tu&#7847;n T{nmn}</div>
+                        {_nbars_svg}
+                    </div>
+                    <div style="flex:0 0 308px;min-width:240px">
+                        {_t7_cards_html}
+                    </div>
+                </div>
+            </div>'''
+
         growth_block = f'''
             <div class="section-title">&#9313; B So S&#225;nh Doanh Thu Theo K&#7923; (DT xu&#7845;t kho t&#7921; t&#237;nh t&#7915; &#273;&#417;n h&#224;ng)</div>
             <div class="table-container">
@@ -1338,6 +1416,30 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                         {_cards_html}
                     </div>
                 </div>
+            </div>{_t7_html}'''
+
+    # === 5B: chi phí QC theo danh mục SP (từ weekly_data) ===
+    ads5b_block = ""
+    _wk5b = list(weekly_data["weeks"].values())[0] if (weekly_data and weekly_data.get("weeks")) else None
+    _ac5 = (_wk5b or {}).get("ads_category") or {}
+    _cats5b = [("san", "Sàn nhựa giả gỗ"), ("son_tuong", "Sơn tường 1kg"), ("congcu", "Công cụ sơn"), ("son_lot", "Sơn lót 1kg"), ("decal", "Decal (bếp/nội thất/tường)"), ("khac", "Khác")]
+    def _f0b(_v):
+        return f"{int(round(_v)):,}".replace(",", ".") if (_v is not None and _v != "") else '<span style="color:var(--text-soft)">&mdash;</span>'
+    _rows5b = ""
+    for _ck, _clabel in _cats5b:
+        for _hk, _hlabel in [("shopee", "Shopee"), ("tiktok", "TikTok")]:
+            _dd = (_ac5.get(_ck) or {}).get(_hk) or {}
+            _cp = _dd.get("cp"); _ds = _dd.get("ds"); _don = _dd.get("don"); _sp = _dd.get("sp")
+            _ratio = (f"{_cp/_ds*100:.1f}%" if (_cp and _ds) else '<span style="color:var(--text-soft)">&mdash;</span>')
+            _rows5b += f'<tr><td>{_clabel}</td><td>{_hlabel}</td><td class="right">{_f0b(_cp)}</td><td class="right">{_f0b(_ds)}</td><td class="right">{_ratio}</td><td class="right">{_f0b(_don)}</td><td class="right">{_f0b(_sp)}</td></tr>'
+    ads5b_block = f'''
+            <div class="section-title">⑤ B 廣告分類 Chi Phí Quảng Cáo Danh Mục SP Theo Tuần</div>
+            <div class="table-container">
+                <div class="wr-meta">Nhập tay vào Google Sheet weekly_report, mục ⑩ CHI PHÍ QC DANH MỤC SP (tuần này). Tỷ lệ CP/DS dashboard tự tính.</div>
+                <table>
+                    <thead><tr><th>類別 Danh mục</th><th>通路 Kênh</th><th class="right">Chi phí QC</th><th class="right">Doanh số QC</th><th class="right">Tỷ lệ CP/DS</th><th class="right">Số đơn</th><th class="right">Số SP</th></tr></thead>
+                    <tbody>{_rows5b}</tbody>
+                </table>
             </div>'''
 
     html = f'''<!DOCTYPE html>
@@ -1805,7 +1907,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 <div class="chart-wrapper"><canvas id="wr-trend-chart"></canvas></div>
             </div>
 
-            <div class="section-title">⑤ 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
+            <div class="section-title">⑤ A 廣告費用週報 Chi Phí Quảng Cáo Theo Tuần</div>
             <div class="table-container">
                 <div class="wr-meta">Số liệu nhập tay từ file <code>weekly_report_data.json</code> — Tuần đang xem: <b id="wr-ad-week-label">—</b></div>
                 <table>
@@ -1823,6 +1925,8 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                     <tbody id="wr-ads-weekly-table"></tbody>
                 </table>
             </div>
+
+{ads5b_block}
 
             <div class="section-title">⑥ 廣告費用月報 Chi Phí Quảng Cáo Theo Tháng</div>
             <div class="table-container">
