@@ -473,7 +473,7 @@ def _parse_weekly_csv(csv_text):
         for _nl, _ol, _cols in rows_by_section.get(_sec, []):
             if "ty le" in _nl:
                 _tyle = list(_cols)
-            if _nl in ("chi tieu", "muc", "danh muc"):
+            elif _nl in ("chi tieu", "muc", "danh muc"):
                 _cats = list(_cols)
             elif "chi phi quang cao" in _nl:
                 _chi = list(_cols)
