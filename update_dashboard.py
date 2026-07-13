@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "1792982691"  # gid của sheet "BAO CAO TUAN"
+WEEKLY_SHEET_GID = "171575596"  # gid của sheet "BAO CAO TUAN"
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -469,7 +469,7 @@ def _parse_weekly_csv(csv_text):
 
     # === ADS CATEGORY (chi phí QC theo danh mục SP) — mục ② B / ② C ===
     def _parse_ads_cat(_sec):
-        _cats = []; _chi = []; _ds = []; _don = []; _tyle = []
+        _cats = []; _chi = []; _ds = []; _don = []; _tyle = []; _sp = []
         for _nl, _ol, _cols in rows_by_section.get(_sec, []):
             if "ty le" in _nl:
                 _tyle = list(_cols)
@@ -481,6 +481,8 @@ def _parse_weekly_csv(csv_text):
                 _ds = list(_cols)
             elif "so don" in _nl:
                 _don = list(_cols)
+            elif "so san pham" in _nl:
+                _sp = list(_cols)
         _out = []
         for _i in range(4):
             _cn = (_cats[_i].strip() if _i < len(_cats) and _cats[_i] else "")
@@ -491,6 +493,7 @@ def _parse_weekly_csv(csv_text):
                 "cp": num_or_none(_chi[_i]) if _i < len(_chi) else None,
                 "ds": num_or_none(_ds[_i]) if _i < len(_ds) else None,
                 "don": num_or_none(_don[_i]) if _i < len(_don) else None,
+                "sp": num_or_none(_sp[_i]) if _i < len(_sp) else None,
                 "tyle": (_tyle[_i].strip() if (_i < len(_tyle) and _tyle[_i]) else None),
             })
         return _out
@@ -1444,7 +1447,10 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             _l1 = '<tr><td><b>Chi phí QC</b></td>' + "".join(f'<td class="right">{_fmt5(_r["cp"])}</td>' for _r in _rows) + '</tr>'
             _l2 = '<tr><td>Doanh số QC</td>' + "".join(f'<td class="right">{_fmt5(_r["ds"])}</td>' for _r in _rows) + '</tr>'
             _l3 = '<tr><td><b>Tỷ lệ CP/Tổng DS</b></td>' + "".join(f'<td class="right">{(_r["tyle"] if _r.get("tyle") else "&mdash;")}</td>' for _r in _rows) + '</tr>'
-            _l4 = '<tr><td>Số đơn từ QC</td>' + "".join(f'<td class="right">{_fmt5(_r["don"])}</td>' for _r in _rows) + '</tr>'
+            if any(_r.get("sp") for _r in _rows):
+                _l4 = '<tr><td>Số SP đã bán</td>' + "".join(f'<td class="right">{_fmt5(_r["sp"])}</td>' for _r in _rows) + '</tr>'
+            else:
+                _l4 = '<tr><td>Số đơn từ QC</td>' + "".join(f'<td class="right">{_fmt5(_r["don"])}</td>' for _r in _rows) + '</tr>'
             _body = _l1 + _l2 + _l3 + _l4
         return f'''
             <div class="section-title">⑤ {_letter} 廣告分類 Chi Phí QC Danh Mục SP Theo Tuần &mdash; {_chan_label}</div>
