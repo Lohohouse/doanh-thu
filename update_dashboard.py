@@ -3395,6 +3395,207 @@ def _generate_platform_tabs():
     return tabs
 
 
+# ===================== HARAVAN OVERRIDE (T6+ realtime) =====================
+# Từ tháng 6/2026, doanh thu cả 4 kênh (Shopee, TikTok, Lazada, Website) lấy từ Haravan.
+# Kênh nhiều đơn (Shopee/TikTok): ngày Haravan chưa phủ đầu T6 tự đắp từ Google Sheets.
+# Kênh ít đơn (Lazada/Website): dùng Haravan toàn bộ T6+ (không cần đắp).
+HARAVAN_SYNC_URL = "https://script.google.com/macros/s/AKfycbxy3kLX2xbosYSkRBSkVPuhrTI1u9imrliNCfjq3lb8OMYKtpoyr9VGvl9acRvSXr9ucw/exec"
+HARAVAN_YEAR = 2026
+HARAVAN_START_MONTH = 6                                   # từ T6 trở đi dùng Haravan
+HARAVAN_CHANNELS = {"Shopee": "shopee", "TikTok": "tiktok", "Lazada": "lazada", "Website": "web"}  # cả 4 kênh
+HARAVAN_FEE_FALLBACK = {"shopee": 0.24, "tiktok": 0.0, "lazada": 0.0, "web": 0.0}   # phí ước tính theo lịch sử
+
+
+def fetch_haravan_orders():
+    """Tải đơn Haravan (action=load), gộp theo mã đơn, loại đơn hủy. Trả list order-record."""
+    out = "/tmp/loho_haravan.json"
+    r = subprocess.run(["curl", "-sL", "-m", "150", HARAVAN_SYNC_URL + "?action=load", "-o", out],
+                       capture_output=True, text=True, timeout=180)
+    if r.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) < 100:
+        raise RuntimeError(f"curl Haravan lỗi rc={r.returncode}")
+    with open(out, "r", encoding="utf-8", errors="replace") as f:
+        j = json.load(f)
+    state = j.get("state")
+    if isinstance(state, str):
+        state = json.loads(state)
+    orders = state.get("orders", []) if isinstance(state, dict) else []
+    by = defaultdict(list)
+    for o in orders:
+        mad = o.get("madon") or ""
+        if mad:
+            by[mad].append(o)
+    recs = []
+    for mad, lines in by.items():
+        ng = next((o.get("ngay") for o in lines if o.get("ngay")), "")
+        if not ng:
+            continue
+        if all(o.get("tthd") == "huy" for o in lines):   # bỏ đơn hủy toàn bộ
+            continue
+        tien = max((float(o.get("tien") or 0) for o in lines), default=0.0)   # tien = tổng đơn (lặp trên mọi dòng)
+        recs.append({"ngay": ng, "kenh": lines[0].get("kenh", ""), "tien": tien, "lines": lines})
+    return recs
+
+
+def _haravan_channel_daily(recs, kenh_name, fee_rate):
+    """Daily {YYYY-MM-DD: {...}} cho 1 kênh, chỉ tháng >= HARAVAN_START_MONTH."""
+    daily = defaultdict(lambda: {"revenue": 0.0, "orders": 0, "fees": 0.0, "net": 0.0,
+                                 "products": defaultdict(int), "product_revenue": defaultdict(float),
+                                 "cats": defaultdict(float)})
+    for rc in recs:
+        if rc["kenh"] != kenh_name:
+            continue
+        ng = rc["ngay"]
+        try:
+            y, m = int(ng[:4]), int(ng[5:7])
+        except Exception:
+            continue
+        if not (y == HARAVAN_YEAR and 1 <= m <= 12 and m >= HARAVAN_START_MONTH):
+            continue
+        tien = rc["tien"]
+        d = daily[ng]
+        fee = tien * fee_rate
+        d["revenue"] += tien
+        d["orders"] += 1
+        d["fees"] += fee
+        d["net"] += (tien - fee)
+        prim = rc["lines"][0]
+        pname = (prim.get("tenSan") or "").strip()
+        canon = canonicalize_product_name(pname) if pname else "(không tên)"
+        cat = classify_product(pname, prim.get("sku") or "")
+        d["product_revenue"][canon] += tien              # doanh thu quy về SP chính của đơn
+        d["cats"][cat] += tien
+        for o in rc["lines"]:                             # số lượng tính theo từng dòng
+            nm = (o.get("tenSan") or "").strip()
+            if not nm:
+                continue
+            q = int(float(o.get("sl") or 0))
+            d["products"][canonicalize_product_name(nm)] += (q if q > 0 else 1)
+    return daily
+
+
+def _haravan_cutoff(daily):
+    """Ngày Haravan bắt đầu phủ liên tục (số đơn/ngày >= 0.5*median). Trước ngày này -> đắp từ Sheets."""
+    import statistics
+    from datetime import date as _date, timedelta as _td
+    days = sorted(daily.keys())
+    if not days:
+        return None
+    total = sum(daily[x]["orders"] for x in days)
+    if total < 30:            # kênh ít đơn (Lazada/Website): dùng Haravan toàn bộ T6+, không đắp
+        return f"{HARAVAN_YEAR:04d}-{HARAVAN_START_MONTH:02d}-01"
+    counts = [daily[x]["orders"] for x in days]
+    med = statistics.median(counts) if counts else 0
+    thr = med * 0.5
+    full = set(x for x in days if daily[x]["orders"] >= thr)
+    last = _date.fromisoformat(days[-1])
+    if last.isoformat() not in full:
+        return last.isoformat()
+    cur = last
+    while True:
+        prev = cur - _td(days=1)
+        if prev.isoformat() in full:
+            cur = prev
+        else:
+            break
+    return cur.isoformat()
+
+
+def apply_haravan_override(platforms_data, daily_data, categories_data, daily_categories_data, log=print):
+    """Thay nguồn T6+ của Shopee/TikTok bằng Haravan; ngày Haravan chưa phủ đắp từ Sheets. Trả True nếu thành công."""
+    try:
+        recs = fetch_haravan_orders()
+    except Exception as e:
+        log(f"  ! Haravan fetch LỖI ({e}) -> GIỮ NGUYÊN Google Sheets cho mọi tháng")
+        return False
+    if not recs:
+        log("  ! Haravan rỗng -> GIỮ NGUYÊN Google Sheets")
+        return False
+    log(f"  Haravan: {len(recs)} đơn hợp lệ (đã loại hủy)")
+
+    def hist_rate(pl):
+        fr = rv = 0
+        for k, v in platforms_data.get(pl, {}).items():
+            try:
+                mm = int(k[1:])
+            except Exception:
+                continue
+            if mm < HARAVAN_START_MONTH:
+                fr += v.get("fees", 0); rv += v.get("revenue", 0)
+        return (fr / rv) if rv > 0 else None
+
+    for kenh_name, pl in HARAVAN_CHANNELS.items():
+        rate = hist_rate(pl)
+        if rate is None:
+            rate = HARAVAN_FEE_FALLBACK.get(pl, 0.0)
+        hdaily = _haravan_channel_daily(recs, kenh_name, rate)
+        cutoff = _haravan_cutoff(hdaily)
+        if not cutoff:
+            log(f"  ! {pl}: Haravan không có ngày hợp lệ -> giữ Sheets")
+            continue
+
+        # (1) daily_data[pl]: xoá ngày >= cutoff (thay bằng Haravan); giữ ngày < cutoff (đắp từ Sheets)
+        dd = daily_data.setdefault(pl, {})
+        for fd in list(dd.keys()):
+            if fd >= cutoff:
+                del dd[fd]
+        dcat = daily_categories_data.setdefault(pl, {})
+        for fd in list(dcat.keys()):
+            if fd >= cutoff:
+                del dcat[fd]
+        for fd, dv in hdaily.items():
+            if fd < cutoff:
+                continue
+            dd[fd] = {"revenue": dv["revenue"], "orders": dv["orders"], "fees": dv["fees"], "net": dv["net"],
+                      "products": dict(dv["products"]), "product_revenue": dict(dv["product_revenue"]),
+                      "order_ids": set()}
+            dcat[fd] = {c: dv["cats"].get(c, 0) for c in ("san", "son", "congcu", "decor", "other")}
+
+        # (2) Dựng lại monthly + categories cho tháng >= start từ daily đã merge (T1..T5 giữ nguyên)
+        mon = platforms_data.setdefault(pl, {})
+        cats_m = categories_data.setdefault(pl, {})
+        for store in (mon, cats_m):
+            for k in list(store.keys()):
+                try:
+                    if int(k[1:]) >= HARAVAN_START_MONTH:
+                        del store[k]
+                except Exception:
+                    pass
+        newmon = defaultdict(lambda: {"orders": 0, "revenue": 0.0, "fees": 0.0, "net": 0.0,
+                                      "daily": defaultdict(lambda: {"revenue": 0, "orders": 0}),
+                                      "products": defaultdict(int), "product_revenue": defaultdict(float)})
+        newcat = defaultdict(lambda: defaultdict(float))
+        for fd, dv in dd.items():
+            try:
+                y, m = int(fd[:4]), int(fd[5:7])
+            except Exception:
+                continue
+            if not (y == HARAVAN_YEAR and m >= HARAVAN_START_MONTH):
+                continue
+            key = f"T{m}"; ddd = fd[8:10]
+            mm = newmon[key]
+            mm["orders"] += dv.get("orders", 0)
+            mm["revenue"] += dv.get("revenue", 0)
+            mm["fees"] += dv.get("fees", 0)
+            mm["net"] += dv.get("net", 0)
+            mm["daily"][ddd]["revenue"] += dv.get("revenue", 0)
+            mm["daily"][ddd]["orders"] += dv.get("orders", 0)
+            for nm, q in dv.get("products", {}).items():
+                mm["products"][nm] += q
+            for nm, rv in dv.get("product_revenue", {}).items():
+                mm["product_revenue"][nm] += rv
+            dc = dcat.get(fd, {})
+            for c in ("san", "son", "congcu", "decor", "other"):
+                newcat[key][c] += dc.get(c, 0)
+        for key, mm in newmon.items():
+            mon[key] = mm
+        for key, cc in newcat.items():
+            cats_m[key] = dict(cc)
+
+        tag = ", ".join(f"{k}={int(mon[k]['revenue']):,}" for k in sorted(mon, key=lambda x: int(x[1:])) if int(k[1:]) >= HARAVAN_START_MONTH)
+        log(f"  {pl}: Haravan tiếp quản từ {cutoff} (phí ~{rate*100:.1f}%) | {tag}")
+    return True
+
+
 def main():
     output_path = sys.argv[1] if len(sys.argv) > 1 else "/sessions/relaxed-laughing-hamilton/mnt/Loho_Dashboard/Dashboard_Loho_House_2026.html"
 
@@ -3454,6 +3655,9 @@ def main():
         if raw_name in csv_paths:
             enrich_products_from_raw(platform, csv_paths[raw_name], platforms_data, daily_data, force_rebuild=True)
 
+    print("\nÁp nguồn Haravan cho T6+ (Shopee/TikTok), đắp ngày thiếu từ Sheets...")
+    apply_haravan_override(platforms_data, daily_data, categories_data, daily_categories_data)
+
     print("\nBuilding data JSON...")
     data_json = build_data_json(platforms_data, categories_data)
     daily_json = build_daily_json(daily_data, daily_categories_data)
@@ -3477,3 +3681,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# haravan-integration v1
