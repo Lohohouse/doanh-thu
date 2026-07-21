@@ -1,0 +1,74 @@
+{
+ "_comment": "Override mục ⑨ Đánh giá & Kế hoạch cho dashboard (vì browser không ghi được Google Sheet). Áp dụng cho tuần có start_date khớp week_start.",
+ "week_start": "2026-07-13",
+ "review_plan": {
+  "evaluation": {
+   "title": "QC hiệu quả cao, dịch vụ tốt; nhưng doanh số QC giảm & khiếu nại vận chuyển tăng",
+   "summary": "Tuần 13-19/07: DT xuất kho 385,7tr (Shopee 235tr · TikTok 149,9tr). DT thực nhận 293tr, phí sàn 127tr. QC: 20,9tr → 175,5tr (ROAS ~8,4x). 185 đánh giá 5★. Khiếu nại 47 đơn (chủ yếu vận chuyển).",
+   "content": "> Điểm sáng\n• QC Shopee xuất sắc: 15,2tr chi phí → 143,5tr doanh số (ROAS 9,5x); nhóm Sàn giả gỗ và Sơn tường 1kg dẫn dắt.\n• Chất lượng dịch vụ cao: 185 đánh giá 5★ (Shopee 137, TikTok 48), gần như không có rate thấp.\n• CSKH chuyển đổi tốt: Shopee 19,9% / TikTok 21,4%, mang về ~65tr doanh số từ chat.\n• Doanh thu tháng T7 Shopee tăng so cùng kỳ T6 (495,7tr vs 387,7tr).\n\n> Cần cải thiện\n• Doanh số từ QC giảm mạnh so tuần trước (Shopee -37%, TikTok -49%) → rà soát nguyên nhân (ngân sách / tồn kho / cạnh tranh).\n• Phí sàn Shopee cao: 88,5tr ≈ 28% DT sàn → bào mòn lợi nhuận.\n• Khiếu nại vận chuyển nhiều: 47 đơn (Shopee 3,3% · TikTok 4,7%) — giao chậm, ĐVVC đi đơn ảo, hàng nặng không giao.\n• QC TikTok ROI giảm (7,6 → 5,5); campaign Chống trơn (Shopee) lỗ (chi phí > doanh số).",
+   "legacy_text": null,
+   "legacy_learn": null,
+   "legacy_note": null
+  },
+  "plan": {
+   "title": "Ra mắt & quảng bá sản phẩm mới; giữ nhịp nhóm chủ lực; xử lý gốc vận chuyển",
+   "actions": [
+    {
+     "category": "Sản phẩm",
+     "action": "**Đăng tải bộ SP mới** lên cả 4 kênh (Shopee/TikTok/Website/Lazada): chuẩn hình ảnh, mô tả, SEO, phân loại, giá",
+     "deadline": "T2-T3",
+     "priority": "Cao"
+    },
+    {
+     "category": "Marketing/QC",
+     "action": "**Quảng bá SP mới**: tách campaign riêng, chạy QC test ngân sách nhỏ, tối ưu ROAS theo ngày",
+     "deadline": "T3-T4",
+     "priority": "Cao"
+    },
+    {
+     "category": "Content",
+     "action": "Video TikTok + bài Website giới thiệu SP mới (USP, demo công năng)",
+     "deadline": "Cả tuần",
+     "priority": "Cao"
+    },
+    {
+     "category": "Livestream",
+     "action": "Livestream ra mắt SP mới trên TikTok kèm voucher/combo",
+     "deadline": "T5-T6",
+     "priority": "Trung"
+    },
+    {
+     "category": "Marketing",
+     "action": "Duy trì & tăng ngân sách nhóm chủ lực ROAS tốt (Sàn giả gỗ, Sơn 1kg)",
+     "deadline": "Cả tuần",
+     "priority": "Cao"
+    },
+    {
+     "category": "Vận hành/VC",
+     "action": "Làm việc với ĐVVC xử lý gốc giao chậm/đơn ảo; theo dõi đơn hàng nặng",
+     "deadline": "Cả tuần",
+     "priority": "Cao"
+    },
+    {
+     "category": "QC",
+     "action": "Cắt campaign lỗ (Chống trơn Shopee); tối ưu ROI QC TikTok",
+     "deadline": "T3",
+     "priority": "Trung"
+    },
+    {
+     "category": "CSKH",
+     "action": "Giữ tỷ lệ chuyển đổi chat; xây kịch bản tư vấn SP mới",
+     "deadline": "Cả tuần",
+     "priority": "Trung"
+    },
+    {
+     "category": "Design",
+     "action": "Bộ visual/thumbnail/ảnh SEO cho SP mới",
+     "deadline": "T2-T4",
+     "priority": "Trung"
+    }
+   ],
+   "legacy_text": null
+  }
+ }
+}
