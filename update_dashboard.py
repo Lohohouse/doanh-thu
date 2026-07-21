@@ -3486,18 +3486,20 @@ def _haravan_cutoff(daily):
     counts = [daily[x]["orders"] for x in days]
     med = statistics.median(counts) if counts else 0
     thr = med * 0.5
-    full = set(x for x in days if daily[x]["orders"] >= thr)
-    last = _date.fromisoformat(days[-1])
-    if last.isoformat() not in full:
-        return last.isoformat()
-    cur = last
-    while True:
-        prev = cur - _td(days=1)
-        if prev.isoformat() in full:
-            cur = prev
+    full = sorted(x for x in days if daily[x]["orders"] >= thr)
+    # mốc = đầu chuỗi ngày "đầy đủ" LIÊN TIẾP DÀI NHẤT.
+    # (KHÔNG dò từ ngày cuối lùi lại — vì "hôm nay" thường là ngày dở dang, ít đơn,
+    #  sẽ bị coi là chưa phủ và đẩy mốc về hôm nay, khiến cả tháng fallback nhầm sang Sheets.)
+    runs = []
+    for x in full:
+        dx = _date.fromisoformat(x)
+        if runs and (dx - _date.fromisoformat(runs[-1][-1])).days == 1:
+            runs[-1].append(x)
         else:
-            break
-    return cur.isoformat()
+            runs.append([x])
+    if not runs:
+        return days[0]
+    return max(runs, key=len)[0]
 
 
 def apply_haravan_override(platforms_data, daily_data, categories_data, daily_categories_data, log=print):
