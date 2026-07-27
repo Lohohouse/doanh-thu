@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "1981061552"  # gid tab tuần hiện tại (13/7-19/7); đổi gid này mỗi khi sang tab tuần mới
+WEEKLY_SHEET_GID = "981295355"  # gid tab tuần hiện tại (20/7-26/7); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -3598,6 +3598,33 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
     return True
 
 
+def apply_weekly_review_override(weekly_data, log=print):
+    """Ghi đè mục ⑨ (Đánh giá & Kế hoạch) từ file weekly_review_override.json.
+    Dùng khi không nhập được trực tiếp vào Google Sheet. Chỉ áp cho tuần có start_date khớp week_start."""
+    fname = "weekly_review_override.json"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for path in (fname, os.path.join(script_dir, fname), os.path.join(os.getcwd(), fname)):
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                ov = json.load(f)
+        except Exception as e:
+            log(f"  ! Lỗi đọc {fname}: {e}")
+            return
+        rp = ov.get("review_plan")
+        if not rp:
+            return
+        ws = ov.get("week_start")
+        n = 0
+        for _wid, wk in (weekly_data.get("weeks") or {}).items():
+            if not ws or wk.get("start_date") == ws:
+                wk["review_plan"] = rp
+                n += 1
+        log(f"  ✓ Override ⑨ Đánh giá & Kế hoạch từ {fname} (week_start={ws}) -> {n} tuần")
+        return
+
+
 def main():
     output_path = sys.argv[1] if len(sys.argv) > 1 else "/sessions/relaxed-laughing-hamilton/mnt/Loho_Dashboard/Dashboard_Loho_House_2026.html"
 
@@ -3668,6 +3695,7 @@ def main():
 
     print("\nLoading weekly report manual data...")
     weekly_data = load_weekly_report_data()
+    apply_weekly_review_override(weekly_data)
     n_weeks = len(weekly_data.get("weeks", {}))
     print(f"  Loaded {n_weeks} week(s) of manual data")
 
