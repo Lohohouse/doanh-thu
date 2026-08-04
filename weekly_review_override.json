@@ -1,69 +1,69 @@
 {
  "_comment": "Override mục ⑨ cho dashboard. week_start khớp tuần đang hiển thị.",
- "week_start": "2026-07-20",
+ "week_start": "2026-07-27",
  "review_plan": {
   "evaluation": {
-   "title": "Tuần tăng trưởng: doanh thu & hiệu quả QC cùng cải thiện, khiếu nại giảm",
-   "summary": "Tuần 20-26/07: DT xuất kho 437,9tr (Shopee 256,6tr · TikTok 175,5tr), +13,5% so tuần trước. DT thực nhận 256tr, phí sàn 108tr. QC: 23,8tr → 210tr (ROAS 8,8x). 177 đánh giá 5★. Khiếu nại giảm còn 43 đơn.",
-   "content": "> Điểm sáng\n• Doanh thu tăng tốt: DT xuất kho 437,9tr (+13,5% so tuần trước); Shopee 256,6tr, TikTok 175,5tr.\n• QC hiệu quả hơn: Shopee ROAS 10,6x (14,5tr → 153,3tr); TikTok scale mạnh (chi phí 5,8→9,3tr, doanh số 32→57tr, ROAS 6,1x).\n• Phí sàn Shopee giảm còn 21,6% DT sàn (tuần trước ~28%) → biên lợi nhuận cải thiện.\n• Khiếu nại giảm: Shopee 2,98% · TikTok 3,94% (tuần trước 3,27% / 4,69%); 177 đánh giá 5★.\n\n> Cần cải thiện\n• QC tháng TikTok còn thấp hơn cùng kỳ T6 (189tr vs 203tr) → ROI chưa hồi phục hoàn toàn.\n• Tỷ lệ chuyển đổi chat giảm nhẹ (Shopee 18,7% · TikTok 17,4%, tuần trước ~20%).\n• Khiếu nại vận chuyển vẫn là nguyên nhân chính (giao chậm, đơn nặng) → xử lý gốc với ĐVVC.\n• Đơn Shopee từ QC giảm (673→359) dù doanh số tăng → tránh phụ thuộc AOV cao.",
+   "title": "Thực nhận tăng, TikTok scale tốt — nhưng khiếu nại Shopee & rate thấp tăng, cần siết chất lượng",
+   "summary": "Tuần 27/07-02/08: DT từ sàn 525tr, thực nhận (quyết toán) 276,5tr (+10% so tuần trước). Phí sàn 118,5tr. QC: 23,7tr → 207,3tr (ROAS 8,8x). 233 đánh giá 5★. Khiếu nại 48 đơn (Shopee tăng lên 4,44%). Tháng T7 chốt +23% vs cùng kỳ.",
+   "content": "> Điểm sáng\n• Doanh thu thực nhận tăng: quyết toán Shopee 166,7tr (+10,5%), TikTok 109,5tr (+10%) so tuần trước.\n• TikTok QC scale tốt: chi phí 9,7tr → doanh số 64,5tr (ROAS 6,7x, 581 đơn — tăng liên tục 3 tuần).\n• Tháng 7 chốt đẹp: QC Shopee doanh số 716,9tr (+23% vs cùng kỳ T6); TikTok 234,5tr (+5%).\n• 233 đánh giá 5★; QC Shopee vẫn hiệu quả cao (ROAS 10,2x).\n\n> Cần cải thiện\n• Khiếu nại Shopee TĂNG mạnh: 4,44% (tuần trước 2,98%) — 28 đơn, chủ yếu vận chuyển (đơn sàn nặng, giao chậm) → ưu tiên xử lý gốc.\n• Rate 1★ tăng (Shopee 4, TikTok 2) từ lỗi decal & đóng gói → siết QC đóng gói/chất lượng.\n• Tỷ lệ chuyển đổi chat tiếp tục giảm (Shopee 17,9% · TikTok 16,9%) → cải thiện kịch bản CSKH.\n• Doanh số QC Shopee giảm nhẹ (153→143tr) → theo dõi, tránh phụ thuộc TikTok.",
    "legacy_text": null,
    "legacy_learn": null,
    "legacy_note": null
   },
   "plan": {
-   "title": "Tuần 27/07-02/08: Nhân đà QC hiệu quả, bứt tốc SP mới, siết chất lượng vận chuyển",
+   "title": "Tuần 03-09/08: Siết chất lượng vận chuyển & đóng gói, giữ đà TikTok, phục hồi chat",
    "actions": [
     {
-     "category": "Marketing/QC",
-     "action": "**Nhân đà QC hiệu quả**: tăng ngân sách nhóm Sàn giả gỗ & Sơn 1kg (ROAS tốt), giữ ROAS Shopee >9x",
-     "deadline": "Cả tuần",
-     "priority": "Cao"
-    },
-    {
-     "category": "Marketing/QC",
-     "action": "**Phục hồi ROI QC TikTok** (đang < cùng kỳ): rà campaign, cắt phần lỗ, tập trung Sơn 1kg & Công cụ",
-     "deadline": "T3",
-     "priority": "Cao"
-    },
-    {
-     "category": "Sản phẩm",
-     "action": "Tiếp tục **đăng & quảng bá SP mới** trên 4 kênh (hình ảnh, mô tả, SEO, giá)",
-     "deadline": "Cả tuần",
-     "priority": "Cao"
-    },
-    {
      "category": "Vận hành/VC",
-     "action": "Xử lý gốc khiếu nại vận chuyển (giao chậm, đơn nặng) với ĐVVC; kéo tỷ lệ KN < 2,5%",
+     "action": "**Ưu tiên xử lý gốc khiếu nại Shopee** (tăng lên 4,44%): làm việc ĐVVC về đơn nặng/giao chậm, kéo tỷ lệ KN < 3%",
+     "deadline": "Cả tuần",
+     "priority": "Cao"
+    },
+    {
+     "category": "Đóng gói/Chất lượng",
+     "action": "Siết QC đóng gói + khắc phục lỗi decal/decal tường (nguồn rate 1★)",
+     "deadline": "T3-T4",
+     "priority": "Cao"
+    },
+    {
+     "category": "Marketing/QC",
+     "action": "**Giữ đà TikTok** (ROAS 6,7x, đơn tăng): tăng ngân sách Sơn 1kg & Công cụ",
      "deadline": "Cả tuần",
      "priority": "Cao"
     },
     {
      "category": "CSKH",
-     "action": "Phục hồi tỷ lệ chuyển đổi chat (mục tiêu ≥20% cả 2 sàn): kịch bản tư vấn, phản hồi nhanh",
+     "action": "Phục hồi tỷ lệ chuyển đổi chat (mục tiêu ≥19%): kịch bản tư vấn, phản hồi nhanh",
      "deadline": "Cả tuần",
      "priority": "Cao"
     },
     {
+     "category": "Marketing/QC",
+     "action": "Duy trì QC Shopee nhóm Sàn giả gỗ (ROAS tốt); rà campaign doanh số giảm",
+     "deadline": "T3",
+     "priority": "Trung"
+    },
+    {
+     "category": "Sản phẩm",
+     "action": "Tiếp tục đăng & quảng bá SP mới trên 4 kênh",
+     "deadline": "Cả tuần",
+     "priority": "Trung"
+    },
+    {
      "category": "Content",
-     "action": "Video/bài giới thiệu SP mới + nội dung nhóm chủ lực (Sàn, Sơn 1kg)",
+     "action": "Video/bài nhóm chủ lực (Sàn, Sơn 1kg) + SP mới",
      "deadline": "Cả tuần",
      "priority": "Trung"
     },
     {
      "category": "Livestream",
-     "action": "Livestream TikTok bán nhóm chủ lực + SP mới, kèm voucher/combo",
+     "action": "Livestream TikTok tận dụng đà tăng đơn, kèm voucher/combo",
      "deadline": "T5-T6",
      "priority": "Trung"
     },
     {
-     "category": "Đóng gói/Chất lượng",
-     "action": "Khắc phục lỗi lẻ từ đánh giá thấp (decal dán bếp, nilon)",
-     "deadline": "T4",
-     "priority": "Trung"
-    },
-    {
      "category": "Website & Zalo",
-     "action": "Duy trì CTKM website + chăm Zalo OA (đang ra đơn)",
+     "action": "Tăng chăm Zalo OA (tuần này chưa ra doanh số) + duy trì CTKM website",
      "deadline": "Cả tuần",
      "priority": "Thấp"
     }
