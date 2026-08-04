@@ -1264,10 +1264,17 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         xk_this = _drev(ws.isoformat(), we.isoformat())
         lw_s, lw_e = ws - _td(days=7), we - _td(days=7)
         xk_last = _drev(lw_s.isoformat(), lw_e.isoformat())
-        cy, cm, cd = int(last_date[:4]), int(last_date[5:7]), int(last_date[8:10])
+        # Neo "tháng này" theo THÁNG CỦA TUẦN BÁO CÁO (ws.month), KHÔNG theo ngày hôm nay,
+        # để tuần cuối tháng (vd 27/7-2/8) chốt theo T7, không nhảy sang T8.
+        cy, cm = ws.year, ws.month
         py, pm = (cy - 1, 12) if cm == 1 else (cy, cm - 1)
         dim_cur = _cal.monthrange(cy, cm)[1]
         dim_prev = _cal.monthrange(py, pm)[1]
+        _ld_dt = _date.fromisoformat(last_date)
+        # nếu tháng báo cáo đã kết thúc (dữ liệu đã sang tháng sau) -> lấy đủ tháng; đang chạy -> tới ngày cuối có dữ liệu
+        cd = _ld_dt.day if (cy, cm) == (_ld_dt.year, _ld_dt.month) else dim_cur
+        _lbl_cur  = f"T{cm} đầy đủ" if cd >= dim_cur else f"1-{cd}/{cm}"
+        _lbl_same = f"T{pm} đầy đủ" if cd >= dim_cur else f"1-{cd}/{pm}"
         xk_mtd = _mrev(cy, cm, 1, cd)
         xk_same = _mrev(py, pm, 1, cd)
         xk_full = _mrev(py, pm, 1, dim_prev)
@@ -1405,8 +1412,8 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                         <th>Ch&#7881; ti&#234;u</th>
                         <th class="right">Tu&#7847;n n&#224;y<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">{_fd2(ws)}-{_fd2(we)}</span></th>
                         <th class="right">Tu&#7847;n tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">{_fd2(lw_s)}-{_fd2(lw_e)}</span></th>
-                        <th class="right">Th&#225;ng n&#224;y<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">1-{cd}/{cm}</span></th>
-                        <th class="right">C&#249;ng k&#7923; th&#225;ng tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">1-{cd}/{pm}</span></th>
+                        <th class="right">Th&#225;ng n&#224;y<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">{_lbl_cur}</span></th>
+                        <th class="right">C&#249;ng k&#7923; th&#225;ng tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">{_lbl_same}</span></th>
                         <th class="right">T&#7893;ng th&#225;ng tr&#432;&#7899;c<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">T{pm} &#273;&#7847;y &#273;&#7911;</span></th>
                         <th class="right">Ch&#234;nh l&#7879;ch<br><span style="font-weight:400;font-size:0.85em;color:var(--text-soft)">Th&#225;ng n&#224;y - T&#7893;ng T{pm}</span></th>
                     </tr></thead>
