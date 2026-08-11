@@ -1275,6 +1275,24 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         cd = _ld_dt.day if (cy, cm) == (_ld_dt.year, _ld_dt.month) else dim_cur
         _lbl_cur  = f"T{cm} đầy đủ" if cd >= dim_cur else f"1-{cd}/{cm}"
         _lbl_same = f"T{pm} đầy đủ" if cd >= dim_cur else f"1-{cd}/{pm}"
+        # Chia tuần trong tháng CĂN THEO CHU KỲ TUẦN BÁO CÁO (ws) — vd 3-9, 10-16, 17-23, 24-30 —
+        # thay vì tuần lịch cố định 1-7/8-14. Ngày lẻ đầu/cuối tháng gom vào "Đầu tháng"/"Cuối tháng".
+        _anchor_wd = ws.weekday()
+        def _aligned_weeks(_yy, _mm, _dim):
+            _f = _date(_yy, _mm, 1); _l = _date(_yy, _mm, _dim)
+            _cur = _f - _td(days=(_f.weekday() - _anchor_wd) % 7)
+            _out = []; _n = 0
+            while _cur <= _l:
+                _s = max(_cur, _f); _e = min(_cur + _td(days=6), _l)
+                if _cur < _f:
+                    _lb = "Đầu tháng"
+                elif _cur + _td(days=6) > _l:
+                    _lb = "Cuối tháng"
+                else:
+                    _n += 1; _lb = f"Tuần {_n}"
+                _out.append((_lb, _s.day, _e.day))
+                _cur += _td(days=7)
+            return _out
         xk_mtd = _mrev(cy, cm, 1, cd)
         xk_same = _mrev(py, pm, 1, cd)
         xk_full = _mrev(py, pm, 1, dim_prev)
@@ -1317,7 +1335,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             f'<div style="background:#f4ede1;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.45em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#9a8f7d;margin-top:4px">{_lbl}</div></div>'
             for _v, _lbl, _c in _cards) + '</div>'
         # ----- Biểu đồ thanh ngang: mục tiêu vs thực đạt theo tuần -----
-        _wkdefs = [("Tuần 1", 1, 7), ("Tuần 2", 8, 14), ("Tuần 3", 15, 21), ("Tuần 4", 22, 28), ("Tuần 5", 29, dim_cur)]
+        _wkdefs = _aligned_weeks(cy, cm, dim_cur)
         _wd = []
         for _nm, _a, _b in _wkdefs:
             if _a > dim_cur:
@@ -1357,7 +1375,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         _base_lbl = "thực tế" if _base_complete else "dự báo"
         target_n = base_next * (1 + GROWTH_TARGET_PCT / 100)
         per_day_n = target_n / dim_next if dim_next else 0
-        _nwk = [("Tuần 1", 1, 7), ("Tuần 2", 8, 14), ("Tuần 3", 15, 21), ("Tuần 4", 22, 28), ("Tuần 5", 29, dim_next)]
+        _nwk = _aligned_weeks(nyn, nmn, dim_next)
         _nwd = []
         for _lb, _a, _b in _nwk:
             if _a > dim_next:
