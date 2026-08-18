@@ -2622,18 +2622,24 @@ function renderTrendBlock(chSel, monthKey){{
     // Build table
     let head=`<th>Nhóm SP</th>`;
     info.weeks.forEach(wk=>{{ head+=`<th class="right">${{wk.fullLabel}}</th>`; }});
-    head+=`<th class="right">Tổng</th><th>Xu hướng (Δ tuần cuối vs đầu tháng)</th>`;
+    head+=`<th class="right">Tổng</th><th>Xu hướng (Δ tuần này vs tuần trước)</th>`;
     document.getElementById("wr-trend-thead").innerHTML=head;
+
+    // XU HƯỚNG = tuần HOÀN CHỈNH gần nhất (ngày cuối tuần <= ngày cuối có data) vs tuần liền trước
+    // -> bỏ qua tuần dở dang ở cuối tháng (vd 17-23 khi mới có data tới 17).
+    let curWkIdx=-1;
+    info.weeks.forEach((wk,wi)=>{{ if(wk.dates[wk.dates.length-1]<=lookupLastDate) curWkIdx=wi; }});
+    const prevWkIdx=curWkIdx-1;
 
     let body="";
     topGroups.forEach(g=>{{
         const arr=data[g]||[];
         const tot=arr.reduce((a,b)=>a+b,0);
-        const first=arr.find(v=>v>0)||0;
-        const last=arr.slice().reverse().find(v=>v>0)||0;
+        const _cw=(curWkIdx>=0)?(arr[curWkIdx]||0):0;   // tuần này (hoàn chỉnh gần nhất)
+        const _pw=(prevWkIdx>=0)?(arr[prevWkIdx]||0):0; // tuần liền trước
         let trend='<span class="badge neutral">—</span>';
-        if(first>0&&last>0&&first!==last){{
-            const pct=((last-first)/first*100).toFixed(1);
+        if(_pw>0&&_cw>0){{
+            const pct=((_cw-_pw)/_pw*100).toFixed(1);
             trend=pct>=0?`<span class="badge up">↑ ${{pct}}%</span>`:`<span class="badge down">↓ ${{Math.abs(pct).toFixed(1)}}%</span>`;
         }}
         body+=`<tr><td><b>${{g.length>60?g.slice(0,60)+"...":g}}</b></td>`;
