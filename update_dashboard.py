@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "355513733"  # gid tab tuần hiện tại (3/8-9/8); đổi gid này mỗi khi sang tab tuần mới
+WEEKLY_SHEET_GID = "997364943"  # gid tab tuần hiện tại (10/8-16/8); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -2746,32 +2746,24 @@ function renderWeekly(){{
     document.getElementById("wr-revenue-table").innerHTML=revHtml;
 
     /* (2) Top 10 SP Tuần + Tháng */
-    const prodMap={{}};
-    platforms.forEach(p=>{{
-        if(!DD[p])return;
-        Object.keys(DD[p]).forEach(d=>{{
-            if(d>=s&&d<=e){{
-                (DD[p][d].products||[]).forEach(prod=>{{
-                    if(!prodMap[prod.name])prodMap[prod.name]={{qty:0,revenue:0}};
-                    prodMap[prod.name].qty+=prod.qty;
-                    prodMap[prod.name].revenue+=prod.revenue;
+    // Gộp SP theo khoảng ngày [a,b]
+    function aggProductsRange(_a,_b,_pls){{
+        const _o={{}};
+        _pls.forEach(p=>{{ if(!DD[p])return;
+            Object.keys(DD[p]).forEach(d=>{{ if(d>=_a&&d<=_b){{
+                (DD[p][d].products||[]).forEach(pr=>{{
+                    if(!_o[pr.name])_o[pr.name]={{qty:0,revenue:0}};
+                    _o[pr.name].qty+=pr.qty; _o[pr.name].revenue+=pr.revenue;
                 }});
-            }}
+            }}}});
         }});
-    }});
-    const prevProdMap={{}};
-    platforms.forEach(p=>{{
-        if(!DD[p])return;
-        Object.keys(DD[p]).forEach(d=>{{
-            if(d>=ws&&d<=we){{
-                (DD[p][d].products||[]).forEach(prod=>{{
-                    if(!prevProdMap[prod.name])prevProdMap[prod.name]={{qty:0,revenue:0}};
-                    prevProdMap[prod.name].qty+=prod.qty;
-                    prevProdMap[prod.name].revenue+=prod.revenue;
-                }});
-            }}
-        }});
-    }});
+        return _o;
+    }}
+    // TUẦN: dùng TUẦN BÁO CÁO (wkStart→wkEnd) vs TUẦN LIỀN TRƯỚC (không dùng ngày lẻ trên date-picker)
+    const [_pwS,_pwE]=getPrevWeekRange(wkStart,wkEnd);
+    const prodMap=aggProductsRange(wkStart,wkEnd,platforms);
+    const prevProdMap=aggProductsRange(_pwS,_pwE,platforms);
+    const weekMetaLabel=`${{fmtDate(wkStart)}} → ${{fmtDate(wkEnd)}} · so tuần trước (${{fmtDate(_pwS)}} → ${{fmtDate(_pwE)}})`;
     const topWeek=Object.entries(prodMap).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,10);
     let twH="";
     topWeek.forEach(([name,v],i)=>{{
@@ -2781,13 +2773,26 @@ function renderWeekly(){{
     }});
     if(!twH)twH='<tr><td colspan="5" class="wr-empty">Không có data SP trong khoảng đã chọn</td></tr>';
     document.getElementById("wr-top-week-table").innerHTML=twH;
-    document.getElementById("wr-top-week-meta").textContent=periodLabel;
+    document.getElementById("wr-top-week-meta").textContent=weekMetaLabel;
 
-    const endMonth=ymdToMonthKey(e);
-    const endMonthIdx=allMonths.indexOf(endMonth);
-    const prevMonth=endMonthIdx>0?allMonths[endMonthIdx-1]:null;
-    const monthData=aggMonth(endMonth,platforms);
-    const prevMonthData=prevMonth?aggMonth(prevMonth,platforms):{{products:{{}}}};
+    // THÁNG: tháng BÁO CÁO (theo wkStart, khớp neo ②B/②C) tới HẾT NGÀY CUỐI TUẦN BÁO CÁO (MTD)
+    //         vs CÙNG KỲ tháng trước (cùng số ngày). VD tuần 10-16/8 -> 1/8-16/8 so 1/7-16/7.
+    const _cY=parseInt(wkStart.slice(0,4),10), _cM=parseInt(wkStart.slice(5,7),10);
+    const _curYM=`${{_cY}}-${{String(_cM).padStart(2,"0")}}`;
+    const _rmDays=new Date(_cY,_cM,0).getDate();
+    let _dataLast=0;
+    platforms.forEach(p=>{{ if(!DD[p])return; Object.keys(DD[p]).forEach(d=>{{ if(d.slice(0,7)===_curYM){{ const _dd=parseInt(d.slice(8,10),10); if(_dd>_dataLast)_dataLast=_dd; }} }}); }});
+    // điểm chốt MTD = ngày cuối tuần báo cáo (nếu tuần còn trong tháng) hoặc hết tháng (nếu tuần vắt sang tháng sau)
+    let _curLast=(wkEnd.slice(0,7)===_curYM)?parseInt(wkEnd.slice(8,10),10):_rmDays;
+    if(_dataLast>0)_curLast=Math.min(_curLast,_dataLast);
+    const _pmY=_cM===1?_cY-1:_cY, _pmM=_cM===1?12:_cM-1;
+    const _pmYM=`${{_pmY}}-${{String(_pmM).padStart(2,"0")}}`;
+    const _pmDays=new Date(_pmY,_pmM,0).getDate();
+    const _pmLast=Math.min(_curLast,_pmDays);
+    const endMonth="T"+_cM, prevMonth="T"+_pmM;
+    const monthData={{products:aggProductsRange(_curYM+"-01",_curYM+"-"+String(_curLast).padStart(2,"0"),platforms)}};
+    const prevMonthData={{products:aggProductsRange(_pmYM+"-01",_pmYM+"-"+String(_pmLast).padStart(2,"0"),platforms)}};
+    const monthMetaLabel=`T${{_cM}} vs T${{_pmM}} · cùng kỳ 1-${{_curLast}} (cùng số ngày)`;
     const topMonth=Object.entries(monthData.products).sort((a,b)=>b[1].revenue-a[1].revenue).slice(0,10);
     let tmH="";
     topMonth.forEach(([name,v],i)=>{{
@@ -2797,7 +2802,7 @@ function renderWeekly(){{
     }});
     if(!tmH)tmH='<tr><td colspan="5" class="wr-empty">Không có data SP cho tháng</td></tr>';
     document.getElementById("wr-top-month-table").innerHTML=tmH;
-    document.getElementById("wr-top-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
+    document.getElementById("wr-top-month-meta").textContent=monthMetaLabel;
 
     /* (2b) Top 5 NHÓM SP - gộp theo quy tắc Loho House */
     function _norm(s){{
@@ -2858,7 +2863,7 @@ function renderWeekly(){{
     }});
     if(!gwH)gwH='<tr><td colspan="6" class="wr-empty">Không có data nhóm SP trong khoảng đã chọn</td></tr>';
     document.getElementById("wr-group-week-table").innerHTML=gwH;
-    document.getElementById("wr-group-week-meta").textContent=periodLabel;
+    document.getElementById("wr-group-week-meta").textContent=weekMetaLabel;
 
     const groupMonth=groupMap(monthData.products);
     const groupMonthPrev=groupMap(prevMonthData.products||{{}});
@@ -2873,7 +2878,7 @@ function renderWeekly(){{
     }});
     if(!gmH)gmH='<tr><td colspan="6" class="wr-empty">Không có data nhóm SP cho tháng</td></tr>';
     document.getElementById("wr-group-month-table").innerHTML=gmH;
-    document.getElementById("wr-group-month-meta").textContent=endMonth+(prevMonth?` vs ${{prevMonth}}`:"");
+    document.getElementById("wr-group-month-meta").textContent=monthMetaLabel;
 
     /* (2c) So sánh lượt bán nhóm SP các tuần trong tháng */
     // Populate month dropdown lần đầu (idempotent)
