@@ -1,52 +1,52 @@
 {
  "_comment": "Override mục ⑨ cho dashboard. week_start khớp tuần đang hiển thị.",
- "week_start": "2026-08-10",
+ "week_start": "2026-08-17",
  "review_plan": {
   "evaluation": {
-   "title": "Thu tiền (quyết toán) tăng mạnh, QC & CSKH cùng hồi phục; tháng T8 vượt cùng kỳ T7",
-   "summary": "Tuần 10-16/08: DT xuất kho 506tr, thực nhận 310tr (Shopee +23%). QC: 25,8tr → 260tr (ROAS ~10x, cải thiện). CSKH chat hồi phục (Shopee 20,7% · TikTok 27,8%). 277 đánh giá 5★. Tháng T8 (1-16) vượt cùng kỳ T7 (Shopee QC +9%, TikTok +36%).",
-   "content": "> Điểm sáng\n• Thu tiền tăng mạnh: DT quyết toán Shopee 217tr (+23% so tuần trước) — dòng tiền thực nhận cải thiện rõ.\n• QC hiệu quả hơn: Shopee ROAS ~12x (chi phí giảm 21→16tr, doanh số 190tr); TikTok tăng (DS 59→70tr, đơn 513→538, ROAS 7,1x).\n• CSKH chat hồi phục mạnh: Shopee 20,7% (tuần trước 15,2%), TikTok 27,8% — chuyển đổi tốt nhất nhiều tuần.\n• Tháng T8 (1-16) vượt cùng kỳ T7: QC Shopee 452,9tr vs 415,6tr (+9%), TikTok 148tr vs 108,7tr (+36%); 277 đánh giá 5★.\n\n> Cần cải thiện\n• DT xuất kho 506tr, giảm ~10% so tuần bùng nổ trước (đang bình thường hóa) → giữ nhịp scale.\n• QC nhóm Chống trơn (Shopee) lỗ nặng (tỷ lệ CP/DS 113,9%) → cắt gấp.\n• Rate 1★ tăng lại (5 đơn: decal bếp, sàn sai màu) → siết QC đóng gói/chất lượng.\n• Khiếu nại TikTok nhích lên 3,46% (giao sai màu/mã); DT quyết toán TikTok giảm → theo dõi.\n\n> Kết luận\nMột tuần CHẤT LƯỢNG hơn là số lượng: doanh thu bình thường hóa (~506tr) sau tuần bùng nổ, nhưng dòng tiền thực nhận (quyết toán) và hiệu quả QC/CSKH đều tiến bộ — nền tảng tăng trưởng lành mạnh. Tháng T8 (1-16) đang vượt cùng kỳ T7 ở cả 2 sàn (QC Shopee +9%, TikTok +36%) → đà tháng vững. Cần dứt điểm ngay 2 việc còn kéo lùi: cắt QC nhóm Chống trơn (lỗ 113,9%) và siết đóng gói/vận chuyển (rate 1★ & khiếu nại) — ngoài 2 điểm này, đây là một tuần rất tích cực.",
+   "title": "Đơn hàng chững lại nhưng thu tiền TikTok hồi phục; tháng T8 vẫn vượt xa cùng kỳ T7",
+   "summary": "Tuần 17-23/08: DT xuất kho 470tr (-7% so tuần trước), thực nhận 318tr. QC: 24,3tr → 224tr (đơn giảm cả 2 sàn). Khiếu nại tiếp tục giảm (Shopee 3,06% · TikTok 3,01%). Tháng T8 (1-24) vượt cùng kỳ T7: QC Shopee +12%, TikTok +39%.",
+   "content": "> Điểm sáng\n• DT quyết toán TikTok hồi phục mạnh: 128,9tr (tuần trước 90,4tr) — thu tiền cải thiện.\n• Tháng T8 (1-24) tiếp tục vượt cùng kỳ T7: QC Shopee 647tr vs 577tr (+12%), TikTok 237tr vs 170tr (+39%).\n• Khiếu nại giảm tiếp: Shopee 3,06% · TikTok 3,01% (đều dưới tuần trước); rate 1★ chỉ còn 2.\n• QC vẫn hiệu quả: Shopee ROAS ~10x, nhóm Sàn giả gỗ dẫn dắt (5,7tr → 82tr).\n\n> Cần cải thiện\n• Đơn hàng & doanh số QC giảm cả 2 sàn (Shopee 426→385 đơn, TikTok 538→475) — nhu cầu chững lại giữa tháng.\n• CSKH chuyển đổi chat giảm mạnh: TikTok 27,8%→15,6%, Shopee 20,7%→17,1% → cần cải thiện gấp.\n• DT xuất kho 470tr, giảm ~7% so tuần trước.\n• ⚠ Mục ① có số bất thường (phí TikTok âm -50,8tr, Tổng DT 2 sàn trùng nhau 189,2tr) → kiểm lại nhập liệu/công thức.\n\n> Kết luận\nTuần chững nhịp nhưng NỀN VẪN VỮNG: đơn hàng & QC hạ nhiệt giữa tháng, song thu tiền (đặc biệt TikTok) hồi phục và tháng T8 (1-24) vẫn vượt xa cùng kỳ T7 ở cả 2 sàn (+12% / +39%). Ưu tiên tuần tới: phục hồi chuyển đổi chat (đang rơi) và kích cầu đơn hàng; đồng thời rà lại số phí ① bị lệch.",
    "legacy_text": null,
    "legacy_learn": null,
    "legacy_note": null
   },
   "plan": {
-   "title": "Tuần 17-23/08: Giữ nhịp scale, cắt QC lỗ, siết chất lượng đóng gói, đẩy CSKH",
+   "title": "Tuần 24-30/08: Kích cầu đơn hàng, phục hồi chuyển đổi chat, kiểm soát chi phí",
    "actions": [
     {
-     "category": "Marketing/QC",
-     "action": "Giữ nhịp scale QC (Shopee ROAS 12x, TikTok đơn tăng): duy trì ngân sách nhóm chủ lực",
+     "category": "CSKH",
+     "action": "**Phục hồi chuyển đổi chat** (TikTok rơi 27,8→15,6%; Shopee 17,1%): kịch bản tư vấn, phản hồi nhanh, chốt đơn",
      "deadline": "Cả tuần",
      "priority": "Cao"
     },
     {
-     "category": "QC",
-     "action": "**Cắt gấp campaign lỗ** (Chống trơn Shopee 113,9%); rà các nhóm tỷ lệ CP/DS cao",
-     "deadline": "T3",
+     "category": "Marketing/QC",
+     "action": "Kích cầu đơn hàng (đơn 2 sàn giảm): tăng test QC nhóm chủ lực, ưu đãi/combo",
+     "deadline": "Cả tuần",
      "priority": "Cao"
     },
     {
-     "category": "Đóng gói/Chất lượng",
-     "action": "Siết QC đóng gói + xử lý lỗi decal bếp/sàn sai màu (nguồn rate 1★ & khiếu nại)",
-     "deadline": "T3-T4",
+     "category": "Kế toán/Vận hành",
+     "action": "⚠ Rà lại số mục ① (phí TikTok âm, Tổng DT trùng) — sửa công thức/nhập liệu",
+     "deadline": "T2-T3",
      "priority": "Cao"
     },
     {
      "category": "Vận hành/VC",
-     "action": "Xử lý gốc khiếu nại TikTok (giao sai màu/mã); giữ tỷ lệ KN < 3%",
+     "action": "Duy trì đà giảm khiếu nại (giữ < 3%); xử lý gốc sàn 7 tấm gãy / giao sai màu",
      "deadline": "Cả tuần",
      "priority": "Cao"
     },
     {
-     "category": "CSKH",
-     "action": "Duy trì đà chuyển đổi chat cao (Shopee ≥20%, TikTok ≥25%)",
+     "category": "Marketing",
+     "action": "Giữ nhịp nhóm chủ lực (Sàn giả gỗ ROAS tốt)",
      "deadline": "Cả tuần",
      "priority": "Trung"
     },
     {
-     "category": "Marketing/QC",
-     "action": "Theo dõi DT quyết toán TikTok (giảm): rà nguyên nhân hoàn/hủy",
-     "deadline": "T4",
+     "category": "Livestream",
+     "action": "Livestream TikTok kích đơn, kèm voucher/combo",
+     "deadline": "T5-T6",
      "priority": "Trung"
     },
     {
@@ -57,15 +57,15 @@
     },
     {
      "category": "Content",
-     "action": "Video/bài nhóm chủ lực (Sàn, Sơn 1kg) + SP mới",
+     "action": "Video/bài nhóm chủ lực + SP mới",
      "deadline": "Cả tuần",
      "priority": "Trung"
     },
     {
-     "category": "Livestream",
-     "action": "Livestream TikTok tận dụng đà đơn tăng, kèm voucher/combo",
-     "deadline": "T5-T6",
-     "priority": "Trung"
+     "category": "QC",
+     "action": "Theo dõi nhóm Chống trơn/Decal tỷ lệ CP/DS; cắt phần lỗ",
+     "deadline": "T4",
+     "priority": "Thấp"
     }
    ],
    "legacy_text": null

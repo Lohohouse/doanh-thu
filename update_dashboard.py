@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "997364943"  # gid tab tuần hiện tại (10/8-16/8); đổi gid này mỗi khi sang tab tuần mới
+WEEKLY_SHEET_GID = "2138537184"  # gid tab tuần hiện tại (17/8-23/8); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -2785,12 +2785,10 @@ function renderWeekly(){{
     //         vs CÙNG KỲ tháng trước (cùng số ngày). VD tuần 10-16/8 -> 1/8-16/8 so 1/7-16/7.
     const _cY=parseInt(wkStart.slice(0,4),10), _cM=parseInt(wkStart.slice(5,7),10);
     const _curYM=`${{_cY}}-${{String(_cM).padStart(2,"0")}}`;
-    const _rmDays=new Date(_cY,_cM,0).getDate();
     let _dataLast=0;
     platforms.forEach(p=>{{ if(!DD[p])return; Object.keys(DD[p]).forEach(d=>{{ if(d.slice(0,7)===_curYM){{ const _dd=parseInt(d.slice(8,10),10); if(_dd>_dataLast)_dataLast=_dd; }} }}); }});
-    // điểm chốt MTD = ngày cuối tuần báo cáo (nếu tuần còn trong tháng) hoặc hết tháng (nếu tuần vắt sang tháng sau)
-    let _curLast=(wkEnd.slice(0,7)===_curYM)?parseInt(wkEnd.slice(8,10),10):_rmDays;
-    if(_dataLast>0)_curLast=Math.min(_curLast,_dataLast);
+    // điểm chốt MTD = NGÀY CUỐI CÓ DỮ LIỆU trong tháng báo cáo (vd 1/8-24/8) -> so cùng số ngày tháng trước (1/7-24/7)
+    let _curLast=_dataLast>0?_dataLast:parseInt(wkEnd.slice(8,10),10);
     const _pmY=_cM===1?_cY-1:_cY, _pmM=_cM===1?12:_cM-1;
     const _pmYM=`${{_pmY}}-${{String(_pmM).padStart(2,"0")}}`;
     const _pmDays=new Date(_pmY,_pmM,0).getDate();
