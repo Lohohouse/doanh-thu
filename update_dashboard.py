@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "2138537184"  # gid tab tuần hiện tại (17/8-23/8); đổi gid này mỗi khi sang tab tuần mới
+WEEKLY_SHEET_GID = "1970252201"  # gid tab tuần hiện tại (31/8-6/9); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -1264,9 +1264,11 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         xk_this = _drev(ws.isoformat(), we.isoformat())
         lw_s, lw_e = ws - _td(days=7), we - _td(days=7)
         xk_last = _drev(lw_s.isoformat(), lw_e.isoformat())
-        # Neo "tháng này" theo THÁNG CỦA TUẦN BÁO CÁO (ws.month), KHÔNG theo ngày hôm nay,
-        # để tuần cuối tháng (vd 27/7-2/8) chốt theo T7, không nhảy sang T8.
-        cy, cm = ws.year, ws.month
+        # Neo "tháng này" theo THÁNG CHỨA THỨ SÁU của tuần báo cáo (ws + 4 ngày), KHÔNG theo ngày hôm nay.
+        # Quy tắc thứ Sáu: tuần thuộc tháng chứa thứ Sáu của tuần đó -> vừa giữ 27/7-2/8 = T7,
+        # 17-23/8 = T8, vừa cho 31/8-6/9 = T9 (thay vì T8 nếu chỉ dùng ws.month).
+        _fri = ws + _td(days=4)
+        cy, cm = _fri.year, _fri.month
         py, pm = (cy - 1, 12) if cm == 1 else (cy, cm - 1)
         dim_cur = _cal.monthrange(cy, cm)[1]
         dim_prev = _cal.monthrange(py, pm)[1]
@@ -2781,9 +2783,10 @@ function renderWeekly(){{
     document.getElementById("wr-top-week-table").innerHTML=twH;
     document.getElementById("wr-top-week-meta").textContent=weekMetaLabel;
 
-    // THÁNG: tháng BÁO CÁO (theo wkStart, khớp neo ②B/②C) tới HẾT NGÀY CUỐI TUẦN BÁO CÁO (MTD)
-    //         vs CÙNG KỲ tháng trước (cùng số ngày). VD tuần 10-16/8 -> 1/8-16/8 so 1/7-16/7.
-    const _cY=parseInt(wkStart.slice(0,4),10), _cM=parseInt(wkStart.slice(5,7),10);
+    // THÁNG: tháng BÁO CÁO = tháng CHỨA THỨ SÁU của tuần báo cáo (khớp neo ②B/②C) tới HẾT NGÀY CUỐI TUẦN BÁO CÁO (MTD)
+    //         vs CÙNG KỲ tháng trước (cùng số ngày). VD tuần 10-16/8 -> 1/8-16/8 so 1/7-16/7; tuần 31/8-6/9 -> T9.
+    const _friD=new Date(wkStart+"T00:00:00"); _friD.setDate(_friD.getDate()+4);
+    const _cY=_friD.getFullYear(), _cM=_friD.getMonth()+1;
     const _curYM=`${{_cY}}-${{String(_cM).padStart(2,"0")}}`;
     let _dataLast=0;
     platforms.forEach(p=>{{ if(!DD[p])return; Object.keys(DD[p]).forEach(d=>{{ if(d.slice(0,7)===_curYM){{ const _dd=parseInt(d.slice(8,10),10); if(_dd>_dataLast)_dataLast=_dd; }} }}); }});
