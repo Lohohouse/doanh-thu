@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "1970252201"  # gid tab tuần hiện tại (31/8-6/9); đổi gid này mỗi khi sang tab tuần mới
+WEEKLY_SHEET_GID = "816152206"  # gid tab tuần hiện tại (7/9-13/9); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -3441,15 +3441,61 @@ HARAVAN_YEAR = 2026
 HARAVAN_START_MONTH = 6                                   # từ T6 trở đi dùng Haravan
 HARAVAN_CHANNELS = {"Shopee": "shopee", "TikTok": "tiktok", "Lazada": "lazada", "Website": "web"}  # cả 4 kênh
 HARAVAN_FEE_FALLBACK = {"shopee": 0.24, "tiktok": 0.0, "lazada": 0.0, "web": 0.0}   # phí ước tính theo lịch sử
+HARAVAN_CACHE_FILE = "haravan_cache.json"   # cache bền: giữ dữ liệu ngày T6+ đã lấy được, không mất khi Haravan lỗi/xoá tháng cũ
+
+
+def _cache_path():
+    for p in (HARAVAN_CACHE_FILE,
+              os.path.join(os.path.dirname(os.path.abspath(__file__)), HARAVAN_CACHE_FILE),
+              os.path.join(os.getcwd(), HARAVAN_CACHE_FILE)):
+        if os.path.exists(p):
+            return p
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), HARAVAN_CACHE_FILE)
+
+
+def _load_haravan_cache(log=print):
+    """Đọc cache daily Haravan {pl:{date:{revenue,orders,fees,net,products,product_revenue,cats}}}."""
+    p = _cache_path()
+    try:
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                c = json.load(f)
+            n = sum(len(v) for v in c.values() if isinstance(v, dict))
+            log(f"  Cache Haravan: đọc {n} ngày từ {os.path.basename(p)}")
+            return c
+    except Exception as e:
+        log(f"  ! Lỗi đọc cache Haravan: {e}")
+    return {}
+
+
+def _save_haravan_cache(cache, log=print):
+    p = _cache_path()
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, separators=(",", ":"))
+        n = sum(len(v) for v in cache.values() if isinstance(v, dict))
+        log(f"  Cache Haravan: lưu {n} ngày -> {os.path.basename(p)}")
+    except Exception as e:
+        log(f"  ! Lỗi lưu cache Haravan: {e}")
 
 
 def fetch_haravan_orders():
     """Tải đơn Haravan (action=load), gộp theo mã đơn, loại đơn hủy. Trả list order-record."""
     out = "/tmp/loho_haravan.json"
-    r = subprocess.run(["curl", "-sL", "-m", "150", HARAVAN_SYNC_URL + "?action=load", "-o", out],
-                       capture_output=True, text=True, timeout=180)
-    if r.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) < 100:
-        raise RuntimeError(f"curl Haravan lỗi rc={r.returncode}")
+    last_err = ""
+    for attempt in range(1, 4):   # thử tối đa 3 lần (Apps Script trả ~10MB, đôi khi chậm/timeout)
+        try:
+            r = subprocess.run(
+                ["curl", "-sL", "--retry", "2", "--retry-delay", "3", "-m", "280",
+                 HARAVAN_SYNC_URL + "?action=load", "-o", out],
+                capture_output=True, text=True, timeout=300)
+            if r.returncode == 0 and os.path.exists(out) and os.path.getsize(out) >= 1000:
+                break
+            last_err = f"rc={r.returncode} size={os.path.getsize(out) if os.path.exists(out) else 0}"
+        except Exception as e:
+            last_err = str(e)
+    else:
+        raise RuntimeError(f"curl Haravan lỗi sau 3 lần: {last_err}")
     with open(out, "r", encoding="utf-8", errors="replace") as f:
         j = json.load(f)
     state = j.get("state")
@@ -3540,16 +3586,21 @@ def _haravan_cutoff(daily):
 
 
 def apply_haravan_override(platforms_data, daily_data, categories_data, daily_categories_data, log=print):
-    """Thay nguồn T6+ của Shopee/TikTok bằng Haravan; ngày Haravan chưa phủ đắp từ Sheets. Trả True nếu thành công."""
+    """Thay nguồn T6+ của Shopee/TikTok bằng Haravan; ngày Haravan chưa phủ đắp từ Sheets. Trả True nếu thành công.
+    Có CACHE bền: dữ liệu ngày T6+ đã lấy được lưu lại; nếu Haravan lỗi/xoá tháng cũ vẫn giữ được (vd T7 đã bị Haravan archive)."""
+    cache = _load_haravan_cache(log)
     try:
         recs = fetch_haravan_orders()
     except Exception as e:
-        log(f"  ! Haravan fetch LỖI ({e}) -> GIỮ NGUYÊN Google Sheets cho mọi tháng")
+        recs = None
+        log(f"  ! Haravan fetch LỖI ({e}) -> dùng CACHE cho T6+ (không rơi về Sheets)")
+    if recs:
+        log(f"  Haravan: {len(recs)} đơn hợp lệ (đã loại hủy)")
+    elif any(cache.get(pl) for pl in HARAVAN_CHANNELS.values()):
+        log("  Haravan rỗng -> dùng CACHE đã lưu cho T6+")
+    else:
+        log("  ! Haravan rỗng và CACHE trống -> GIỮ NGUYÊN Google Sheets")
         return False
-    if not recs:
-        log("  ! Haravan rỗng -> GIỮ NGUYÊN Google Sheets")
-        return False
-    log(f"  Haravan: {len(recs)} đơn hợp lệ (đã loại hủy)")
 
     def hist_rate(pl):
         fr = rv = 0
@@ -3562,14 +3613,29 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
                 fr += v.get("fees", 0); rv += v.get("revenue", 0)
         return (fr / rv) if rv > 0 else None
 
+    CATS5 = ("san", "son", "congcu", "decor", "other")
     for kenh_name, pl in HARAVAN_CHANNELS.items():
         rate = hist_rate(pl)
         if rate is None:
             rate = HARAVAN_FEE_FALLBACK.get(pl, 0.0)
-        hdaily = _haravan_channel_daily(recs, kenh_name, rate)
+        # Bắt đầu từ CACHE đã lưu (giữ các ngày Haravan không còn trả về, vd T7 đã archive)
+        merged = {}
+        for fd, cv in (cache.get(pl) or {}).items():
+            merged[fd] = {"revenue": float(cv.get("revenue", 0)), "orders": int(cv.get("orders", 0)),
+                          "fees": float(cv.get("fees", 0)), "net": float(cv.get("net", 0)),
+                          "products": dict(cv.get("products", {})), "product_revenue": dict(cv.get("product_revenue", {})),
+                          "cats": {c: float(cv.get("cats", {}).get(c, 0)) for c in CATS5}}
+        # Ghi đè bằng dữ liệu MỚI từ Haravan (nếu fetch thành công) — ngày mới thắng cache
+        hfresh = _haravan_channel_daily(recs, kenh_name, rate) if recs else {}
+        for fd, dv in hfresh.items():
+            merged[fd] = {"revenue": dv["revenue"], "orders": dv["orders"], "fees": dv["fees"], "net": dv["net"],
+                          "products": dict(dv["products"]), "product_revenue": dict(dv["product_revenue"]),
+                          "cats": {c: dv["cats"].get(c, 0) for c in CATS5}}
+        cache[pl] = merged          # cập nhật cache (sẽ lưu lại cuối hàm)
+        hdaily = merged
         cutoff = _haravan_cutoff(hdaily)
         if not cutoff:
-            log(f"  ! {pl}: Haravan không có ngày hợp lệ -> giữ Sheets")
+            log(f"  ! {pl}: Haravan/cache không có ngày hợp lệ -> giữ Sheets")
             continue
 
         # (1) daily_data[pl]: xoá ngày >= cutoff (thay bằng Haravan); giữ ngày < cutoff (đắp từ Sheets)
@@ -3632,6 +3698,7 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
 
         tag = ", ".join(f"{k}={int(mon[k]['revenue']):,}" for k in sorted(mon, key=lambda x: int(x[1:])) if int(k[1:]) >= HARAVAN_START_MONTH)
         log(f"  {pl}: Haravan tiếp quản từ {cutoff} (phí ~{rate*100:.1f}%) | {tag}")
+    _save_haravan_cache(cache, log)
     return True
 
 

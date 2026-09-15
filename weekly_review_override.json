@@ -1,69 +1,69 @@
 {
  "_comment": "Override mục ⑨ cho dashboard. week_start khớp tuần đang hiển thị.",
- "week_start": "2026-08-31",
+ "week_start": "2026-09-07",
  "review_plan": {
   "evaluation": {
-   "title": "QC Shopee rất khỏe & thu tiền ổn định, nhưng khiếu nại tăng mạnh và QC TikTok suy giảm khi bước sang T9",
-   "summary": "Tuần 31/8-6/9: thực nhận Shopee 166,2tr · TikTok 97,9tr · Website 16,6tr (phí/DT 31,3% / 26,4%). QC Shopee mạnh (ROAS ~13x, Sàn giả gỗ 21x) nhưng QC TikTok tụt (ROAS 7,0→5,2x). ⚠ Khiếu nại tăng mạnh: Shopee 4,87% · TikTok 4,60% (chủ yếu vận chuyển đơn sàn nặng + sai màu). Chuyển đổi chat Shopee thấp (15,6%).",
-   "content": "> Điểm sáng\n• QC Shopee hiệu quả cao: ROAS tổng ~13,0x; nhóm Sàn giả gỗ 21,3x (DS 123,4tr), Decal 15,2x, Sơn tường 6,9x — chi phí giảm nhẹ (-3,3%) mà doanh số QC vẫn tăng (+0,6%), đơn +3,4%.\n• Thu tiền ổn định: thực nhận Shopee 166,2tr · TikTok 97,9tr · Website 16,6tr.\n• Đánh giá 5★ tốt: Shopee 142 · TikTok 38.\n\n> Cần cải thiện\n• ⚠ Khiếu nại tăng mạnh: Shopee 4,87% (35 đơn) · TikTok 4,60% (26 đơn) — mức cao. Nguyên nhân chính: vận chuyển đơn sàn nặng / lỗi phân phối ĐVVC (Shopee 21, TikTok 19) + sai màu sàn/sơn (Shopee 5, TikTok 4). Đây là rủi ro lớn nhất tuần.\n• QC TikTok suy giảm: chi phí +12,4% nhưng doanh số QC -16,5%, ROAS rớt 7,0→5,2x; nhóm Decal không ra đơn.\n• Chuyển đổi chat Shopee thấp: CR 15,6% (TikTok 21,8%) dù có 359 lượt chat — cần nâng kịch bản & tốc độ phản hồi.\n• Phí sàn cao bào mòn biên: Shopee 31,3% · TikTok 26,4% doanh thu.\n• Rate 1★ Shopee = 7 (đổ sơn, thiếu quà tặng).\n\n> Kết luận\nNền QC Shopee rất khỏe (ROAS ~13x, nhóm Sàn giả gỗ dẫn dắt) và thu tiền ổn định, nhưng tuần này lộ 3 điểm nóng cần xử lý ngay khi bước sang T9: (1) khiếu nại vận chuyển & sai màu tăng lên ~4,6-4,9%, (2) QC TikTok mất hiệu quả (ROAS 5,2x), (3) chuyển đổi chat Shopee thấp. Mục tiêu T9 đặt +10% so T8 — muốn đạt phải vừa giữ đà QC Shopee, vừa chặn khiếu nại và phục hồi TikTok/CSKH.",
+   "title": "Tuần bứt tốc: thực nhận tăng mạnh cả 2 sàn, đánh giá & khiếu nại cải thiện rõ; QC đẩy mạnh cần giữ hiệu quả",
+   "summary": "Tuần 7-13/9: thực nhận Shopee 187,4tr (+12,8%) · TikTok 122,5tr (+25,2%) so tuần trước. Phí/DT 31,2% / 25,2%. QC đẩy mạnh: DS QC Shopee +21,8% (ROAS 11,2x), TikTok +22,4% (ROAS hồi 5,2→5,7x). CSKH Shopee phục hồi (CR 16,5%, chat 48,8tr). Khiếu nại giảm còn 3,89% cả 2 sàn; Shopee 237 rate 5★.",
+   "content": "> Điểm sáng\n• Thực nhận tăng mạnh cả 2 sàn: Shopee 187,4tr (+12,8%), TikTok 122,5tr (+25,2%) so tuần trước.\n• QC bứt tốc: Shopee chi +41,5% → DS QC +21,8% (258tr); TikTok chi +11% → DS QC +22,4% (73,4tr), ROAS hồi phục 5,2→5,7x.\n• CSKH Shopee phục hồi đúng kế hoạch: CR 15,6→16,5%, DS chat +23,8% (48,8tr).\n• Đánh giá cải thiện mạnh: Shopee 237 rate 5★ (từ 142), 1★ còn 2 (từ 7).\n• Khiếu nại giảm: Shopee 4,87→3,89%, TikTok 4,60→3,89%; xử lý gần hết (Shopee 24/28, TikTok 21/22).\n\n> Cần cải thiện\n• Shopee ROAS QC giảm 13→11,2x do tăng chi 41% — cần siết hiệu quả để không loãng ngân sách.\n• DS chat TikTok giảm 29,7% (34,8→24,4tr) dù CR cao 26,25% — lượt chat giảm.\n• Khiếu nại vẫn chủ yếu vận chuyển đơn sàn nặng / lỗi phân phối ĐVVC (Shopee 18, TikTok 16) + sai màu sàn (Shopee 4, TikTok 2).\n• Mục ②B/②C (QC theo danh mục SP) tuần này bỏ trống → thiếu dữ liệu theo dõi ROAS từng nhóm.\n\n> Kết luận\nTuần bứt tốc và lành mạnh: doanh thu, thực nhận, đánh giá đều tăng và khiếu nại giảm về ~3,9% — kế hoạch tuần trước (phục hồi CSKH, chặn khiếu nại) đã phát huy. Điểm cần canh: Shopee tăng chi QC 41% nhưng ROAS giảm còn 11x, và DS chat TikTok đi xuống. Tuần tới giữ đà tăng trưởng nhưng siết hiệu quả QC và phục hồi chat TikTok; đồng thời nhập đủ số liệu QC danh mục.",
    "legacy_text": null,
    "legacy_learn": null,
    "legacy_note": null
   },
   "plan": {
-   "title": "Tuần 7-13/9: Chặn khiếu nại vận chuyển & sai màu, phục hồi QC TikTok, nâng chuyển đổi chat — khởi động mục tiêu T9 (+10%)",
+   "title": "Tuần 14-20/9: Giữ đà tăng trưởng, siết hiệu quả QC Shopee, phục hồi chat TikTok",
    "actions": [
     {
+     "category": "Marketing/QC",
+     "action": "**Siết hiệu quả QC Shopee**: chi +41% nhưng ROAS giảm 13→11,2x — cắt từ khóa/nhóm ROAS thấp, dồn ngân sách nhóm sinh lời, tránh tăng chi loãng",
+     "deadline": "T2-T3",
+     "priority": "Cao"
+    },
+    {
      "category": "Vận hành/VC",
-     "action": "**Xử lý gốc khiếu nại vận chuyển**: đơn sàn nặng không giao / lỗi phân phối ĐVVC (Shopee 21, TikTok 19) — làm việc lại với ĐVVC, kéo tỷ lệ khiếu nại về < 3%",
+     "action": "Tiếp tục xử lý gốc vận chuyển đơn sàn nặng / lỗi phân phối ĐVVC (Shopee 18, TikTok 16) — đưa khiếu nại < 3%",
      "deadline": "Cả tuần",
      "priority": "Cao"
     },
     {
      "category": "Chất lượng/Kho",
-     "action": "**Chặn lỗi sai màu** (Shopee 5, TikTok 4): chuẩn hóa quy trình chọn & kiểm màu sàn/sơn trước khi đóng gói, dán nhãn màu rõ ràng",
+     "action": "Giảm lỗi sai màu sàn (Shopee 4, TikTok 2): chuẩn hóa kiểm màu trước đóng gói",
      "deadline": "T2-T4",
      "priority": "Cao"
     },
     {
-     "category": "Marketing/QC",
-     "action": "**Phục hồi QC TikTok** (ROAS 7,0→5,2x): cắt Decal (không ra đơn), dồn ngân sách Sơn tường (5,0x) & Công cụ sơn (6,0x); đặt trần CP/DS",
-     "deadline": "T2-T3",
-     "priority": "Cao"
-    },
-    {
      "category": "CSKH",
-     "action": "**Nâng chuyển đổi chat Shopee** (CR 15,6% vs TikTok 21,8%): kịch bản tư vấn, tốc độ phản hồi, upsell/combo",
-     "deadline": "Cả tuần",
-     "priority": "Cao"
-    },
-    {
-     "category": "Marketing/QC",
-     "action": "Giữ & mở rộng nhóm chủ lực Shopee ROAS cao: Sàn giả gỗ 21x, Decal 15x, Sơn tường 7x",
+     "action": "Giữ đà Shopee (CR 16,5%, chat 48,8tr); **phục hồi DS chat TikTok** (giảm 29,7%): tăng lượt chat, kịch bản chốt đơn",
      "deadline": "Cả tuần",
      "priority": "Trung"
     },
     {
      "category": "Sản phẩm",
-     "action": "Tiếp tục đăng & quảng bá SP mới trên 4 kênh",
+     "action": "Đăng & quảng bá sản phẩm mới trên 4 kênh",
      "deadline": "Cả tuần",
      "priority": "Trung"
     },
     {
-     "category": "Đóng gói",
-     "action": "Khắc phục đóng gói thiếu & thiếu quà tặng (5 lượt) — giảm rate thấp",
+     "category": "Marketing",
+     "action": "Nhân đà TikTok (ROAS hồi 5,7x, đơn +15,7%): mở rộng nhóm QC hiệu quả",
      "deadline": "Cả tuần",
      "priority": "Trung"
+    },
+    {
+     "category": "Dữ liệu/Vận hành",
+     "action": "Nhập đủ mục ②B/②C (QC danh mục SP) — tuần này bỏ trống, không theo dõi được ROAS từng nhóm",
+     "deadline": "T2",
+     "priority": "Thấp"
     },
     {
      "category": "Website & Zalo",
-     "action": "Đẩy Website + Zalo OA (DS chat 16,6tr) bằng CTKM & remarketing",
+     "action": "Tiếp tục CTKM Website + đẩy Zalo OA",
      "deadline": "Cả tuần",
      "priority": "Thấp"
     },
     {
      "category": "Content/Design",
-     "action": "Visual trang chủ shop + bài website cho nhóm chủ lực & SP mới",
+     "action": "Visual trang chủ shop + bài website nhóm chủ lực & SP mới",
      "deadline": "Cả tuần",
      "priority": "Thấp"
     }
