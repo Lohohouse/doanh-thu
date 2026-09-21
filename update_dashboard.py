@@ -26,7 +26,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 
 # Google Sheet để nhập tay data báo cáo tuần
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
-WEEKLY_SHEET_GID = "816152206"  # gid tab tuần hiện tại (7/9-13/9); đổi gid này mỗi khi sang tab tuần mới
+WEEKLY_SHEET_GID = "1188687633"  # gid tab tuần hiện tại (14/9-20/9); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
 
 SHEETS = {
@@ -1214,6 +1214,8 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     import calendar as _cal
     from datetime import date as _date, timedelta as _td
     GROWTH_TARGET_PCT = 10
+    # Mục tiêu TUYỆT ĐỐI theo tháng (tổng DT xuất kho). Có thì dùng số này & tự quy ra % vs tháng trước.
+    GROWTH_TARGET_ABS = {"2026-09": 2_500_000_000}
     def _drev(_a, _b):
         _s = 0
         for _pl in daily_json.values():
@@ -1275,6 +1277,10 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         _ld_dt = _date.fromisoformat(last_date)
         # nếu tháng báo cáo đã kết thúc (dữ liệu đã sang tháng sau) -> lấy đủ tháng; đang chạy -> tới ngày cuối có dữ liệu
         cd = _ld_dt.day if (cy, cm) == (_ld_dt.year, _ld_dt.month) else dim_cur
+        # Chốt MTD tới HẾT NGÀY CUỐI TUẦN BÁO CÁO (we): vd tuần 14-20/9 -> 1-20/9 so cùng kỳ 1-20/8,
+        # không rò ngày "hôm nay" dở dang khi chạy sau khi tuần đã kết thúc. Chỉ áp khi we cùng tháng báo cáo.
+        if (we.year, we.month) == (cy, cm):
+            cd = min(cd, we.day)
         _lbl_cur  = f"T{cm} đầy đủ" if cd >= dim_cur else f"1-{cd}/{cm}"
         _lbl_same = f"T{pm} đầy đủ" if cd >= dim_cur else f"1-{cd}/{pm}"
         # Chia tuần trong tháng CĂN THEO CHU KỲ TUẦN BÁO CÁO (ws) — vd 3-9, 10-16, 17-23, 24-30 —
@@ -1305,7 +1311,14 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         _settled = sum(v for v in (_num(_sett.get(k)) for k in ["shopee_settled","tiktok_settled","lazada_settled","website_settled"]) if v)
         _none = '<span style="color:var(--text-soft)">&mdash;</span>'
         _chenh_html = f'<b style="color:{"#1e7d34" if xk_chenh >= 0 else "#c0392b"}">{_fvnd(xk_chenh)}</b>'
-        target = xk_full * (1 + GROWTH_TARGET_PCT / 100)
+        _abs_tgt = GROWTH_TARGET_ABS.get(f"{cy:04d}-{cm:02d}")
+        if _abs_tgt:
+            target = float(_abs_tgt)
+            _pct_cur = _pct(target, xk_full) if xk_full else 0     # % suy ra từ mục tiêu tuyệt đối vs DT tháng trước
+        else:
+            target = xk_full * (1 + GROWTH_TARGET_PCT / 100)
+            _pct_cur = GROWTH_TARGET_PCT
+        _pct_lbl = f"{_pct_cur:+.1f}".replace(".", ",")            # vd "+16,2"
         per_day_t = target / dim_cur if dim_cur else 0
         cum_t = per_day_t * cd
         pct_plan = (xk_mtd / cum_t * 100) if cum_t else 0
@@ -1327,7 +1340,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         _pp_color = _C_OK if pct_plan >= 100 else ("#d59a1e" if pct_plan >= 80 else _C_NO)
         _cards = [
             (f"{pct_plan:.0f}%", "Đạt kế hoạch tháng", _pp_color),
-            (_tr(target), f"Mục tiêu T{cm} (+{GROWTH_TARGET_PCT}%)", "#7a5c33"),
+            (_tr(target), f"Mục tiêu T{cm} ({_pct_lbl}%)", "#7a5c33"),
             (_tr(xk_mtd), "Thực đạt đến nay", _C_OK),
             (_tr(remain_need), f"Còn thiếu ({remain_d} ngày)", _C_NO),
             (_tr(per_day_need), "Cần đạt / ngày", _C_NO),
@@ -1445,9 +1458,9 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                     </tbody>
                 </table>
             </div>
-            <div class="section-title">&#9313; C M&#7909;c Ti&#234;u T&#259;ng Tr&#432;&#7903;ng T{cm} (+{GROWTH_TARGET_PCT}% vs T{pm})</div>
+            <div class="section-title">&#9313; C M&#7909;c Ti&#234;u T&#259;ng Tr&#432;&#7903;ng T{cm} ({_pct_lbl}% vs T{pm})</div>
             <div class="table-container">
-                <div class="wr-meta">&#127919; M&#7909;c ti&#234;u = DT T{pm} ({_fvnd(xk_full)}) &times; {100 + GROWTH_TARGET_PCT}% = <b>{_fvnd(target)}</b></div>
+                <div class="wr-meta">&#127919; M&#7909;c ti&#234;u T{cm} = <b>{_fvnd(target)}</b> (t&#7893;ng DT) &middot; <b>{_pct_lbl}%</b> vs T{pm} (DT T{pm} = {_fvnd(xk_full)})</div>
                 <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
                     <div style="flex:1 1 360px;min-width:300px">
                         <div class="chart-title" style="text-align:left">M&#7909;c ti&#234;u vs Th&#7921;c &#273;&#7841;t theo tu&#7847;n</div>
@@ -2792,6 +2805,9 @@ function renderWeekly(){{
     platforms.forEach(p=>{{ if(!DD[p])return; Object.keys(DD[p]).forEach(d=>{{ if(d.slice(0,7)===_curYM){{ const _dd=parseInt(d.slice(8,10),10); if(_dd>_dataLast)_dataLast=_dd; }} }}); }});
     // điểm chốt MTD = NGÀY CUỐI CÓ DỮ LIỆU trong tháng báo cáo (vd 1/8-24/8) -> so cùng số ngày tháng trước (1/7-24/7)
     let _curLast=_dataLast>0?_dataLast:parseInt(wkEnd.slice(8,10),10);
+    // Chốt MTD tới HẾT NGÀY CUỐI TUẦN BÁO CÁO (nếu we cùng tháng báo cáo): vd 1-20/9 so cùng kỳ 1-20/8
+    const _weM=parseInt(wkEnd.slice(5,7),10), _weD=parseInt(wkEnd.slice(8,10),10);
+    if(_weM===_cM) _curLast=Math.min(_curLast,_weD);
     const _pmY=_cM===1?_cY-1:_cY, _pmM=_cM===1?12:_cM-1;
     const _pmYM=`${{_pmY}}-${{String(_pmM).padStart(2,"0")}}`;
     const _pmDays=new Date(_pmY,_pmM,0).getDate();
