@@ -1,0 +1,25 @@
+{
+ "_comment": "Doanh thu theo nguồn NHẬP TAY theo tuần (từ seller center). Key = ngày đầu tuần. Đơn vị VND. shopee=tách nguồn; tiktok=tổng quan (chưa có tách Live/Video).",
+ "tuan": {
+  "2026-08-31": {
+   "end": "2026-09-06", "label": "31/8 - 6/9",
+   "shopee": {"tong": 376374920, "the_sp": 278854680, "live": 0, "video": 35401323, "ttlk": 62118910, "dv_hienthi": 218083880},
+   "tiktok": {"gmv": 225284156, "so_don": 736, "hoan_tien": 6118742, "tong_dt": 258957576}
+  },
+  "2026-09-07": {
+   "end": "2026-09-13", "label": "7/9 - 13/9",
+   "shopee": {"tong": 432325840, "the_sp": 331724150, "live": 0, "video": 49616527, "ttlk": 50985171, "dv_hienthi": 266234050},
+   "tiktok": {"gmv": 220579472, "so_don": 801, "hoan_tien": 11490669, "tong_dt": 259301829}
+  },
+  "2026-09-14": {
+   "end": "2026-09-20", "label": "14/9 - 20/9",
+   "shopee": {"tong": 428475490, "the_sp": 344853110, "live": 0, "video": 36549903, "ttlk": 47072480, "dv_hienthi": 287410130},
+   "tiktok": {"gmv": 206376214, "so_don": 701, "hoan_tien": 6739532, "tong_dt": 233517054}
+  },
+  "2026-09-21": {
+   "end": "2026-09-27", "label": "21/9 - 27/9",
+   "shopee": {"tong": 400087920, "the_sp": 295007630, "live": 0, "video": 46461140, "ttlk": 58619155, "dv_hienthi": 214307890},
+   "tiktok": {"gmv": 219685253, "so_don": 661, "hoan_tien": 16725547, "tong_dt": 246614987}
+  }
+ }
+}

@@ -1196,6 +1196,34 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     products_str = json.dumps(products_json, ensure_ascii=False)
     weekly_str = json.dumps(weekly_data or {"current_week": "", "weeks": {}}, ensure_ascii=False)
     sku_by_name_str = json.dumps(sku_by_name or {}, ensure_ascii=False)
+    # Dữ liệu bổ sung theo THÁNG (đơn hoàn, phí sàn thực + chi tiết, DT thực, DT theo nguồn) từ file gốc
+    _supp = {"nam": 2026, "thang": {}}
+    for _p in ("monthly_supplement.json",
+               os.path.join(os.path.dirname(os.path.abspath(__file__)), "monthly_supplement.json"),
+               os.path.join(os.getcwd(), "monthly_supplement.json")):
+        if os.path.exists(_p):
+            try:
+                with open(_p, "r", encoding="utf-8") as _f:
+                    _supp = json.load(_f)
+                print(f"  Supplement: đọc {len(_supp.get('thang', {}))} tháng từ {os.path.basename(_p)}")
+            except Exception as _e:
+                print(f"  ! Lỗi đọc monthly_supplement.json: {_e}")
+            break
+    supp_str = json.dumps(_supp, ensure_ascii=False)
+    # Doanh thu theo nguồn NHẬP TAY theo tuần (từ seller center)
+    _suppw = {"tuan": {}}
+    for _p in ("nguon_tuan.json",
+               os.path.join(os.path.dirname(os.path.abspath(__file__)), "nguon_tuan.json"),
+               os.path.join(os.getcwd(), "nguon_tuan.json")):
+        if os.path.exists(_p):
+            try:
+                with open(_p, "r", encoding="utf-8") as _f:
+                    _suppw = json.load(_f)
+                print(f"  Nguồn theo tuần: đọc {len(_suppw.get('tuan', {}))} tuần từ {os.path.basename(_p)}")
+            except Exception as _e:
+                print(f"  ! Lỗi đọc nguon_tuan.json: {_e}")
+            break
+    supp_week_str = json.dumps(_suppw, ensure_ascii=False)
     trend_labels = json.dumps(months)
     # Find latest date with data for default
     all_dates = set()
@@ -1208,7 +1236,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     month_buttons = ""
     for m in months:
         active = " active" if m == last_month else ""
-        month_buttons += f'        <button class="month-btn{active}" data-month="{m}">{m}</button>\n'
+        month_buttons += f'                    <button class="mpreset{active}" data-month="{m}">{m}</button>\n'
 
     # === Block ①B (ma trận DT theo kỳ) + ①C (biểu đồ trái + hộp số liệu phải) ===
     import calendar as _cal
@@ -1228,7 +1256,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     def _fvnd(_v):
         return f"{int(round(_v)):,}".replace(",", ".")
     def _tr(_v):
-        return f"{_v/1000000:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " tr"
+        return f"{int(round(_v or 0)):,}".replace(",", ".") + " đ"
     def _shift_month(_dt, _n):
         _mm = _dt.month - 1 + _n
         _yy = _dt.year + _mm // 12
@@ -1333,21 +1361,21 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 if _fd[:7] == f"{cy:04d}-{cm:02d}":
                     _dd = int(_fd[8:10]); _daysum[_dd] = _daysum.get(_dd, 0) + _r.get("revenue", 0)
         # ----- màu chủ đạo -----
-        _C_BE = "#CBB994"   # be - mục tiêu
-        _C_OK = "#27ae60"   # xanh - đạt/vượt
-        _C_NO = "#e74c3c"   # đỏ - chưa đạt
+        _C_BE = "#9db8d6"   # xanh nhạt - mục tiêu (hợp tông xanh)
+        _C_OK = "#138a5e"   # xanh lá - đạt/vượt
+        _C_NO = "#c2362b"   # đỏ - chưa đạt
         # ----- Hộp số liệu (stat cards) -----
         _pp_color = _C_OK if pct_plan >= 100 else ("#d59a1e" if pct_plan >= 80 else _C_NO)
         _cards = [
             (f"{pct_plan:.0f}%", "Đạt kế hoạch tháng", _pp_color),
-            (_tr(target), f"Mục tiêu T{cm} ({_pct_lbl}%)", "#7a5c33"),
+            (_tr(target), f"Mục tiêu T{cm} ({_pct_lbl}%)", "#0E4D8B"),
             (_tr(xk_mtd), "Thực đạt đến nay", _C_OK),
             (_tr(remain_need), f"Còn thiếu ({remain_d} ngày)", _C_NO),
             (_tr(per_day_need), "Cần đạt / ngày", _C_NO),
             (f"{mom:+.1f}%", "Tăng trưởng cùng kỳ (MoM)", _C_OK if mom >= 0 else _C_NO),
         ]
         _cards_html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">' + "".join(
-            f'<div style="background:#f4ede1;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.45em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#9a8f7d;margin-top:4px">{_lbl}</div></div>'
+            f'<div style="background:#eef4fb;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.02em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#647489;margin-top:4px">{_lbl}</div></div>'
             for _v, _lbl, _c in _cards) + '</div>'
         # ----- Biểu đồ thanh ngang: mục tiêu vs thực đạt theo tuần -----
         _wkdefs = _aligned_weeks(cy, cm, dim_cur)
@@ -1360,9 +1388,9 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             _act = sum(_daysum.get(_d, 0) for _d in range(_a, _b2 + 1))
             _wd.append((f"{_nm} ({_a}-{_b2})", _tgt, _act))
         _maxv = max([max(_t, _a) for _, _t, _a in _wd] + [1])
-        _BW, _bleft, _bright, _btop = 560, 92, 92, 10
+        _BW, _bleft, _bright, _btop = 560, 96, 132, 10
         _barA = _BW - _bleft - _bright
-        _rowH, _barH, _ggap = 50, 16, 5
+        _rowH, _barH, _ggap = 40, 13, 4
         _BH = _btop * 2 + len(_wd) * _rowH
         _bars = ""
         for _i, (_nm, _t, _a) in enumerate(_wd):
@@ -1372,9 +1400,9 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             _y2 = _y + _barH + _ggap
             _acol = _C_OK if _a >= _t else _C_NO
             _bars += (
-                f'<text x="6" y="{_y + _barH + 4:.0f}" font-size="11.5" fill="#5c4f3a" font-weight="600">{_nm}</text>'
+                f'<text x="6" y="{_y + _barH + 4:.0f}" font-size="10.5" fill="#334155" font-weight="600">{_nm}</text>'
                 f'<rect x="{_bleft}" y="{_y:.0f}" width="{max(_wt,0.6):.1f}" height="{_barH}" rx="3" fill="{_C_BE}"/>'
-                f'<text x="{_bleft + _wt + 6:.1f}" y="{_y + _barH - 3:.0f}" font-size="10.5" fill="#9a8f7d">{_tr(_t)}</text>'
+                f'<text x="{_bleft + _wt + 6:.1f}" y="{_y + _barH - 3:.0f}" font-size="9" fill="#647489">{_tr(_t)}</text>'
                 f'<rect x="{_bleft}" y="{_y2:.0f}" width="{max(_wa,0.6):.1f}" height="{_barH}" rx="3" fill="{_acol}"/>'
                 f'<text x="{_bleft + _wa + 6:.1f}" y="{_y2 + _barH - 3:.0f}" font-size="10.5" fill="{_acol}" font-weight="600">{_tr(_a)}</text>'
             )
@@ -1398,7 +1426,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             _b2 = min(_b, dim_next)
             _nwd.append((f"{_lb} ({_a}-{_b2})", per_day_n * (_b2 - _a + 1)))
         _nmaxv = max([_t for _, _t in _nwd] + [1])
-        _NW, _nbl, _nbr, _nbt = 560, 92, 96, 8
+        _NW, _nbl, _nbr, _nbt = 560, 96, 132, 8
         _nbA = _NW - _nbl - _nbr
         _nrowH, _nbarH = 34, 18
         _nBH = _nbt * 2 + len(_nwd) * _nrowH
@@ -1407,19 +1435,19 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             _y = _nbt + _i * _nrowH
             _w = (_t / _nmaxv) * _nbA
             _nbars += (
-                f'<text x="6" y="{_y + _nbarH - 4:.0f}" font-size="11.5" fill="#5c4f3a" font-weight="600">{_label}</text>'
+                f'<text x="6" y="{_y + _nbarH - 4:.0f}" font-size="10.5" fill="#334155" font-weight="600">{_label}</text>'
                 f'<rect x="{_nbl}" y="{_y:.0f}" width="{max(_w,0.6):.1f}" height="{_nbarH}" rx="3" fill="{_C_BE}"/>'
-                f'<text x="{_nbl + _w + 6:.1f}" y="{_y + _nbarH - 5:.0f}" font-size="10.5" fill="#9a8f7d">{_tr(_t)}</text>'
+                f'<text x="{_nbl + _w + 6:.1f}" y="{_y + _nbarH - 5:.0f}" font-size="9" fill="#647489">{_tr(_t)}</text>'
             )
         _nbars_svg = f'<svg viewBox="0 0 {_NW} {_nBH}" style="width:100%;height:auto">{_nbars}</svg>'
         _t7_cards = [
-            (_tr(target_n), f"Mục tiêu T{nmn} (+{GROWTH_TARGET_PCT}%)", "#7a5c33"),
-            (_tr(per_day_n), "Cần đạt / ngày", "#7a5c33"),
-            (_tr(per_day_n * 7), "Trung bình / tuần", "#7a5c33"),
-            (_tr(base_next), f"Cơ sở T{cm} ({_base_lbl})", "#9a7b3f"),
+            (_tr(target_n), f"Mục tiêu T{nmn} (+{GROWTH_TARGET_PCT}%)", "#0E4D8B"),
+            (_tr(per_day_n), "Cần đạt / ngày", "#0E4D8B"),
+            (_tr(per_day_n * 7), "Trung bình / tuần", "#0E4D8B"),
+            (_tr(base_next), f"Cơ sở T{cm} ({_base_lbl})", "#0A3A6B"),
         ]
         _t7_cards_html = '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">' + "".join(
-            f'<div style="background:#f4ede1;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.4em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#9a8f7d;margin-top:4px">{_lbl}</div></div>'
+            f'<div style="background:#eef4fb;border-radius:12px;padding:14px 10px;text-align:center"><div style="font-size:1.0em;font-weight:700;color:{_c};line-height:1.05">{_v}</div><div style="font-size:0.76em;color:#647489;margin-top:4px">{_lbl}</div></div>'
             for _v, _lbl, _c in _t7_cards) + '</div>'
         _t7_html = f'''
             <div class="section-title">&#9313; C &middot; M&#7909;c Ti&#234;u T&#259;ng Tr&#432;&#7903;ng Th&#225;ng Sau T{nmn} (+{GROWTH_TARGET_PCT}% vs T{cm})</div>
@@ -1507,34 +1535,56 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard 營收報表 Báo Cáo Doanh Thu LOHO House 2026</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg-page: #F5EFE6;
-            --bg-card: #FFFCF7;
-            --bg-soft: #FAF6EE;
-            --bg-section: #F9F3E8;
-            --primary: #8B6F47;
-            --primary-dark: #6B5236;
-            --primary-light: #B89970;
-            --accent: #C9A961;
-            --accent-dark: #A6864B;
-            --text-dark: #3D2E1F;
-            --text-mid: #6B5236;
-            --text-soft: #9B8975;
-            --border: #E8DFD3;
-            --border-soft: #F0E7DA;
-            --header-grad-start: #3D2E1F;
-            --header-grad-end: #6B5236;
-            --shadow-sm: 0 2px 8px rgba(61,46,31,0.06);
-            --shadow-md: 0 4px 16px rgba(61,46,31,0.08);
-            --shadow-lg: 0 8px 24px rgba(61,46,31,0.10);
-            --green-up: #6B8E5A;
-            --green-up-bg: #E6EFDD;
-            --red-down: #B5573D;
-            --red-down-bg: #F5E1D6;
+            /* LOHO UI — design system xanh (đồng bộ với hệ thống kho) */
+            --bg-page: #eef2f7;
+            --bg-card: #ffffff;
+            --bg-soft: #f6f9fc;
+            --bg-section: #e9f1fb;
+            --primary: #0E4D8B;
+            --primary-dark: #0A3A6B;
+            --primary-light: #1B74C4;
+            --accent: #1B74C4;
+            --accent-dark: #0E4D8B;
+            --text-dark: #15263b;
+            --text-mid: #334155;
+            --text-soft: #647489;
+            --border: #e2e8f1;
+            --border-soft: #eef2f7;
+            --header-grad-start: #0A3A6B;
+            --header-grad-end: #1565ac;
+            --grad: linear-gradient(120deg,#0E4D8B,#1B74C4);
+            --grad-side: linear-gradient(165deg,#0A3A6B,#0E4D8B 58%,#1565ac);
+            --shadow-sm: 0 1px 2px rgba(16,30,54,.05), 0 4px 14px rgba(16,30,54,.05);
+            --shadow-md: 0 6px 18px rgba(16,30,54,.09);
+            --shadow-lg: 0 12px 34px rgba(16,30,54,.13);
+            --green-up: #138a5e;
+            --green-up-bg: #e7f6ee;
+            --red-down: #c2362b;
+            --red-down-bg: #fdeae7;
+            --side-w: 224px;
         }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-page); color: var(--text-dark); }}
+        html {{ scroll-behavior: smooth; }}
+        body {{ font-family: 'Be Vietnam Pro','Segoe UI',Tahoma,sans-serif; background-color: var(--bg-page); color: var(--text-dark); font-size: 14px; line-height: 1.45; }}
+        /* ===== APP LAYOUT: sidebar + main ===== */
+        .app {{ display: flex; min-height: 100vh; }}
+        .side {{ width: var(--side-w); flex-shrink: 0; background: var(--grad-side); color: #fff; position: sticky; top: 0; height: 100vh; overflow-y: auto; box-shadow: 2px 0 16px rgba(10,58,107,.22); z-index: 30; display: flex; flex-direction: column; }}
+        .side-top {{ padding: 18px 16px 14px; border-bottom: 1px solid rgba(255,255,255,.14); }}
+        .side-logo {{ font-weight: 700; font-size: 16px; letter-spacing: .3px; display:flex; align-items:center; gap:8px; }}
+        .side-logo .mk {{ width: 22px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.2); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.55); }}
+        .side-sub {{ font-size: 11px; opacity: .78; margin-top: 5px; }}
+        .nav {{ flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 1px; }}
+        .nav-group {{ font-size: 10px; text-transform: uppercase; letter-spacing: .8px; opacity: .62; padding: 12px 12px 5px; font-weight: 600; }}
+        .navitem {{ display: flex; align-items: center; gap: 9px; color: rgba(255,255,255,.86); padding: 8px 12px; border-radius: 9px; cursor: pointer; font-size: 13px; text-align: left; border: none; background: none; font-family: inherit; width: 100%; transition: .15s; text-decoration: none; }}
+        .navitem:hover {{ background: rgba(255,255,255,.1); color: #fff; }}
+        .navitem.on {{ background: rgba(255,255,255,.18); color: #fff; font-weight: 600; box-shadow: inset 3px 0 0 #fff; }}
+        .navitem .ni-b {{ font-weight:700; opacity:.9; font-size:11px; width:16px; }}
+        .navitem.sub {{ padding-left: 30px; font-size: 12.3px; opacity: .8; }}
+        .main {{ flex: 1; min-width: 0; display: flex; flex-direction: column; }}
         .header {{ background: linear-gradient(135deg, var(--header-grad-start) 0%, var(--header-grad-end) 100%); color: #F5EFE6; padding: 36px 20px; text-align: center; box-shadow: var(--shadow-md); position: relative; overflow: hidden; }}
         .header::before {{ content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); }}
         .header h1 {{ font-size: 2.4em; margin-bottom: 10px; font-weight: 600; letter-spacing: 0.5px; }}
@@ -1543,7 +1593,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         .controls {{ background: var(--bg-card); padding: 22px 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; box-shadow: var(--shadow-sm); border-bottom: 1px solid var(--border); }}
         .month-btn {{ padding: 10px 22px; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text-mid); border-radius: 24px; cursor: pointer; font-weight: 600; transition: all 0.25s ease; letter-spacing: 0.3px; }}
         .month-btn:hover {{ border-color: var(--primary-light); color: var(--primary); background: var(--bg-soft); }}
-        .month-btn.active {{ background: var(--primary); color: var(--bg-card); border-color: var(--primary); box-shadow: 0 2px 8px rgba(139,111,71,0.25); }}
+        .month-btn.active {{ background: var(--primary); color: var(--bg-card); border-color: var(--primary); box-shadow: 0 2px 8px rgba(14,77,139,0.22); }}
         .tabs {{ display: flex; background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 0 20px; gap: 0; box-shadow: var(--shadow-sm); }}
         .tab-btn {{ padding: 16px 26px; background: none; border: none; cursor: pointer; font-weight: 600; color: var(--text-soft); border-bottom: 3px solid transparent; transition: all 0.25s ease; letter-spacing: 0.3px; }}
         .tab-btn:hover {{ color: var(--primary); background: var(--bg-soft); }}
@@ -1585,7 +1635,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         .lookup-bar {{ background: var(--bg-card); padding: 20px 22px; border-radius: 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-soft); margin-bottom: 20px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }}
         .lookup-bar label {{ font-weight: 600; color: var(--text-dark); font-size: 0.92em; }}
         .lookup-bar select, .lookup-bar input {{ padding: 9px 13px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.93em; font-family: inherit; color: var(--text-dark); background: var(--bg-card); }}
-        .lookup-bar input:focus, .lookup-bar select:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139,111,71,0.12); }}
+        .lookup-bar input:focus, .lookup-bar select:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(14,77,139,0.12); }}
         .lookup-bar .mode-toggle {{ display: flex; gap: 6px; }}
         .lookup-bar .mode-btn {{ padding: 8px 16px; border: 1.5px solid var(--border); background: var(--bg-card); color: var(--text-mid); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.88em; transition: all 0.2s ease; }}
         .lookup-bar .mode-btn:hover {{ border-color: var(--primary-light); }}
@@ -1597,7 +1647,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         .lookup-bar .compare-info {{ font-size: 0.85em; color: var(--text-mid); margin-left: auto; }}
         .search-bar {{ position: relative; margin-bottom: 20px; }}
         .search-bar input {{ width: 100%; padding: 13px 18px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 15px; font-family: inherit; box-sizing: border-box; background: var(--bg-card); color: var(--text-dark); }}
-        .search-bar input:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(139,111,71,0.12); }}
+        .search-bar input:focus {{ outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(14,77,139,0.12); }}
         .search-results {{ position: absolute; top: calc(100% + 2px); left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; max-height: 320px; overflow-y: auto; z-index: 100; display: none; box-shadow: var(--shadow-lg); }}
         .search-results.show {{ display: block; }}
         .search-result-item {{ padding: 11px 18px; cursor: pointer; border-bottom: 1px solid var(--border-soft); font-size: 14px; transition: background 0.15s; color: var(--text-dark); }}
@@ -1659,114 +1709,151 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         @media (max-width: 768px) {{
             .wr-grid-2 {{ grid-template-columns: 1fr; }}
         }}
+        /* ===== NEW LAYOUT OVERRIDES (loho-ui) ===== */
+        .topbar {{ background: var(--grad); color: #fff; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; box-shadow: var(--shadow-sm); position: sticky; top: 0; z-index: 25; }}
+        .topbar h1 {{ font-size: 18px; font-weight: 700; letter-spacing: .2px; margin: 0; }}
+        .topbar .up {{ font-size: 12px; opacity: .9; }}
+        /* Thanh lọc dính (2 hàng) */
+        .filterbar {{ position: sticky; top: 50px; z-index: 24; background: var(--bg-card); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); padding: 9px 24px; }}
+        .filterbar .frow {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
+        .filterbar .frow + .frow {{ margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }}
+        .filterbar label {{ font-size: 12px; font-weight: 600; color: var(--text-mid); }}
+        .filterbar input[type=date] {{ padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; color: var(--text-dark); }}
+        .flabel {{ font-size: 11px; font-weight: 700; color: var(--text-soft); text-transform: uppercase; letter-spacing: .5px; margin-right: 2px; }}
+        .seg {{ display: inline-flex; gap: 4px; background: var(--bg-section); padding: 3px; border-radius: 9px; }}
+        .seg button {{ padding: 6px 13px; border: none; background: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-mid); font-family: inherit; transition: .15s; }}
+        .seg button.active {{ background: var(--grad); color: #fff; box-shadow: 0 2px 6px rgba(14,77,139,.25); }}
+        .mpreset {{ padding: 6px 12px; border: 1.5px solid var(--border); background: #fff; color: var(--text-mid); border-radius: 999px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; transition: .15s; }}
+        .mpreset:hover {{ border-color: var(--primary-light); color: var(--primary); }}
+        .mpreset.active {{ background: var(--grad); color: #fff; border-color: transparent; }}
+        .chsel {{ display: inline-flex; gap: 5px; flex-wrap: wrap; }}
+        .chsel .ch-pill {{ padding: 6px 15px; border: 1.5px solid var(--border); background: #fff; color: var(--text-mid); border-radius: 999px; cursor: pointer; font-size: 12.5px; font-weight: 600; font-family: inherit; transition: .15s; }}
+        .chsel .ch-pill:hover {{ border-color: var(--primary-light); color: var(--primary); }}
+        .chsel .ch-pill.active {{ background: var(--grad); color: #fff; border-color: transparent; box-shadow: 0 2px 6px rgba(14,77,139,.25); }}
+        .wrap {{ padding: 20px 24px; }}
+        /* Trang Báo cáo tuần: có padding + ghim thanh lọc ngày/kênh */
+        #weekly {{ padding: 16px 24px 24px; }}
+        #weekly .lookup-bar.wr-sticky {{ position: sticky; top: 50px; z-index: 23; margin: 0 0 16px; box-shadow: var(--shadow-md); }}
+        .panel {{ display: none; }}
+        .panel.on {{ display: block; animation: fadep .2s ease; }}
+        @keyframes fadep {{ from {{ opacity: 0; transform: translateY(3px); }} to {{ opacity: 1; transform: none; }} }}
+        /* Nhóm section A/B/C/D */
+        .grp {{ scroll-margin-top: 116px; margin: 0 0 8px; }}
+        .grp-head {{ display: flex; align-items: center; gap: 10px; margin: 26px 0 4px; }}
+        .grp-head .badge-g {{ background: var(--grad); color: #fff; width: 30px; height: 30px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; box-shadow: var(--shadow-sm); }}
+        .grp-head h2 {{ font-size: 17px; font-weight: 700; color: var(--text-dark); margin: 0; }}
+        .sub-anchor {{ scroll-margin-top: 120px; }}
+        /* Section title -> loho look */
+        .section-title {{ font-size: 1.02em; font-weight: 700; color: var(--primary); margin: 18px 0 12px; padding: 0 0 7px; border-bottom: 2px solid var(--border); display: block; }}
+        /* KPI cards -> loho .kpi look, 4 per row */
+        .kpi-grid {{ grid-template-columns: repeat(4, minmax(0,1fr)); }}
+        .kpi-card {{ padding: 15px 16px; border-radius: 12px; position: relative; overflow: hidden; border: 1px solid var(--border); }}
+        .kpi-card::before {{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background: var(--grad); }}
+        .kpi-card.k-neutral::before {{ background: #9aa6b6; }}
+        .kpi-card.k-cost::before {{ background: linear-gradient(#c2362b,#e2574b); }}
+        .kpi-card.k-net::before {{ background: linear-gradient(#138a5e,#1fae76); }}
+        .kpi-label {{ font-size: .74em; }}
+        .kpi-value {{ font-size: 1.12em; margin-top: 4px; margin-bottom: 4px; }}
+        .kpi-sub {{ font-size: .72em; color: var(--text-soft); }}
+        .card-note {{ background: linear-gradient(120deg,#f3f8fd,#eef4fb); border: 1px solid var(--border); border-left: 3px solid var(--primary-light); border-radius: 8px; padding: 12px 15px; font-size: 12.5px; color: #3a4a60; }}
+        .card-note.warn {{ background: #fff7e6; border-left-color: #d59a1e; color: #7a5a12; }}
+        .need-src {{ display:inline-block; font-size: 11px; font-weight: 600; color: #b9770e; background: #fdf2d6; padding: 2px 8px; border-radius: 999px; }}
+        @media (max-width: 1100px) {{ .kpi-grid {{ grid-template-columns: repeat(2, minmax(0,1fr)); }} }}
+        @media (max-width: 900px) {{
+            .app {{ flex-direction: column; }}
+            .side {{ width: 100%; height: auto; position: relative; flex-direction: row; flex-wrap: wrap; align-items: center; }}
+            .side-top {{ flex: 1 1 auto; border: none; }}
+            .nav {{ flex-direction: row; overflow-x: auto; padding: 6px; }}
+            .nav-group {{ display: none; }}
+            .navitem {{ width: auto; white-space: nowrap; }}
+            .navitem.sub {{ display: none; }}
+            .filterbar {{ top: 0; }}
+            .topbar {{ position: relative; }}
+        }}
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1><span class="accent">LOHO</span> House 營收報表 Báo Cáo Doanh Thu 2026</h1>
-        <p>更新時間 Cập nhật: {today}</p>
-    </div>
-
-    <div class="controls">
-{month_buttons}    </div>
-
-    <div class="tabs">
-        <button class="tab-btn active" data-tab="tong-quan">總覽 Tổng Quan</button>
-        <button class="tab-btn" data-tab="shopee">Shopee</button>
-        <button class="tab-btn" data-tab="tiktok">TikTok</button>
-        <button class="tab-btn" data-tab="lazada">Lazada</button>
-        <button class="tab-btn" data-tab="website">Website</button>
-        <button class="tab-btn" data-tab="lookup">查詢 Tra Cứu Theo Ngày</button>
-        <button class="tab-btn" data-tab="weekly">週報 Báo Cáo Hàng Tuần</button>
-    </div>
-
-    <div class="container">
-        <!-- ===== 總覽 TAB ===== -->
-        <div id="tong-quan" class="tab-content active">
-            <div class="section-title">① 關鍵績效指標總覽 KPI Tổng Quan</div>
-            <div class="kpi-grid" id="tongQuan-kpi"></div>
-
-            <div class="section-title">② 每日營收圖表 Biểu Đồ Doanh Thu Theo Ngày</div>
-            <div class="chart-container"><div class="chart-title">每日營收趨勢 Xu hướng doanh thu hàng ngày</div><div class="chart-wrapper"><canvas id="tongQuan-daily-chart"></canvas></div></div>
-
-            <div class="section-title">③ 各月份營收成長比較 So Sánh Tăng Trưởng Doanh Thu &amp; 各通路比較 Các Kênh</div>
-            <div class="section-grid">
-                <div class="chart-container"><div class="chart-title">各月份營收趨勢 Xu hướng doanh thu các tháng</div><div class="chart-wrapper"><canvas id="tongQuan-trend-chart"></canvas></div></div>
-                <div class="chart-container"><div class="chart-title">各通路營收比較 So sánh kênh (本月 vs 上月 Tháng này vs Tháng trước)</div><div class="chart-wrapper"><canvas id="tongQuan-channel-chart"></canvas></div></div>
-            </div>
-            <div class="table-container">
-                <div class="chart-title">各月份營收成長明細 Chi tiết tăng trưởng doanh thu từng tháng</div>
-                <table><thead><tr><th>月份 Tháng</th><th class="right">營收 Doanh Thu</th><th class="right">訂單數 Đơn Hàng</th><th class="right">客單價 AOV</th><th>環比成長 Tăng Trưởng</th></tr></thead><tbody id="tongQuan-mom-table"></tbody></table>
-            </div>
-
-            <div class="section-title">④ 產品類別營收 Doanh Thu Theo Danh Mục Sản Phẩm</div>
-            <div class="section-grid">
-                <div class="chart-container"><div class="chart-title">產品類別營收分佈 Phân bổ doanh thu danh mục</div><div class="chart-wrapper"><canvas id="tongQuan-category-chart"></canvas></div></div>
-                <div class="table-container" style="height:auto;">
-                    <div class="chart-title">各類別營收明細 Chi tiết doanh thu từng danh mục</div>
-                    <table><thead><tr><th>類別 Danh Mục</th><th class="right">本月營收 Tháng Này</th><th class="right">上月營收 Tháng Trước</th><th>變化 Thay Đổi</th></tr></thead><tbody id="tongQuan-category-table"></tbody></table>
-                </div>
-            </div>
-
-            <div class="section-title">⑤ 平台費用分析 Chi Phí Sàn &amp; Tỷ Lệ Phí</div>
-            <div class="section-grid">
-                <div class="chart-container"><div class="chart-title">各通路平台費用 Phí sàn các kênh</div><div class="chart-wrapper"><canvas id="tongQuan-fees-chart"></canvas></div></div>
-                <div class="table-container" style="height:auto;">
-                    <div class="chart-title">平台費用及費率 Phí sàn và tỷ lệ %</div>
-                    <table><thead><tr><th>通路 Kênh</th><th class="right">營收 Doanh Thu</th><th class="right">平台費用 Phí Sàn</th><th class="right">費率 Tỷ Lệ %</th><th class="right">淨收入 DT Ròng</th></tr></thead><tbody id="tongQuan-fees-table"></tbody></table>
-                </div>
-            </div>
-
-            <div class="section-title">⑥ 各月份營收環比比較 So Sánh Doanh Thu Tháng Với Tháng Trước</div>
-            <div class="section-grid">
-                <div class="chart-container"><div class="chart-title">各通路月度營收對比 So sánh doanh thu kênh theo tháng</div><div class="chart-wrapper"><canvas id="tongQuan-mom-channel-chart"></canvas></div></div>
-                <div class="table-container" style="height:auto;">
-                    <div class="chart-title">各通路本月 vs 上月 Các kênh: Tháng này vs Tháng trước</div>
-                    <table><thead><tr><th>通路 Kênh</th><th class="right">本月營收 Tháng Này</th><th class="right">上月營收 Tháng Trước</th><th>變化 Thay Đổi</th></tr></thead><tbody id="tongQuan-mom-channel-table"></tbody></table>
-                </div>
-            </div>
-
-            <div class="section-title">⑦ 暢銷產品類別 Danh Mục SP Bán Chạy Theo Doanh Thu</div>
-            <div class="table-container">
-                <div class="chart-title">暢銷產品 Top 5 Top 5 sản phẩm bán chạy (so sánh tháng trước)</div>
-                <table><thead><tr><th>#</th><th>產品名稱 Tên SP</th><th class="right">數量 SL</th><th class="right">營收 Doanh Thu</th><th>通路 Kênh</th></tr></thead><tbody id="tongQuan-products-table"></tbody></table>
-            </div>
+<div class="app">
+    <aside class="side">
+        <div class="side-top">
+            <div class="side-logo"><span class="mk"></span> LOHO House</div>
+            <div class="side-sub">Báo cáo doanh thu 2026</div>
         </div>
-
+        <nav class="nav">
+            <div class="nav-group">Báo cáo</div>
+            <a class="navitem on" data-goto="secA"><span class="ni-b">A</span> Tổng quan</a>
+            <div class="nav-group">B · Doanh thu</div>
+            <a class="navitem sub" data-goto="secB1">B1 · Tổng quan các sàn</a>
+            <a class="navitem sub" data-goto="secB2">B2 · Doanh thu theo ngày</a>
+            <a class="navitem sub" data-goto="secB3">B3 · Biểu đồ tăng trưởng</a>
+            <a class="navitem sub" data-goto="secB4">B4 · Doanh thu theo nguồn</a>
+            <div class="nav-group">C · Sản phẩm</div>
+            <a class="navitem sub" data-goto="secC1">C1 · Theo danh mục</a>
+            <a class="navitem sub" data-goto="secC2">C2 · Top 10 sản phẩm</a>
+            <a class="navitem sub" data-goto="secC3">C3 · Tăng trưởng Top 10</a>
+            <a class="navitem sub" data-goto="secC4">C4 · Tra cứu sản phẩm</a>
+            <div class="nav-group">D · Chi phí</div>
+            <a class="navitem sub" data-goto="secD1">D1 · Phí sàn</a>
+            <a class="navitem sub" data-goto="secD2">D2 · % phí theo tháng</a>
+            <a class="navitem sub" data-goto="secD3">D3 · Chi tiết phí sàn</a>
+            <a class="navitem sub" data-goto="secD4">D4 · Phí quảng cáo</a>
+            <div class="nav-group">Khác</div>
+            <a class="navitem" data-panel="weekly">📅 Báo cáo tuần</a>
+        </nav>
+    </aside>
+    <div class="main">
+        <div class="topbar">
+            <h1>📊 Báo Cáo Doanh Thu LOHO House 2026</h1>
+            <span class="up">Cập nhật: {today}</span>
+        </div>
         <!-- ===== TRA CUU THEO NGAY TAB ===== -->
-        <div id="lookup" class="tab-content">
-            <div class="lookup-bar">
-                <div class="mode-toggle">
-                    <button class="mode-btn active" data-mode="single" data-target="main">1 ngày</button>
-                    <button class="mode-btn" data-mode="range" data-target="main">Khoảng ngày</button>
+        <div id="lookup" class="panel on">
+            <div class="filterbar">
+                <div class="frow">
+                    <span class="flabel">Kỳ</span>
+                    <div class="seg">
+                        <button class="mode-btn active" data-mode="single" data-target="main">1 ngày</button>
+                        <button class="mode-btn" data-mode="range" data-target="main">Khoảng ngày</button>
+                    </div>
+                    <span id="lookup-single-controls"><input type="date" id="lookup-date" value="{last_date}" min="{first_date}" max="{last_date}"></span>
+                    <span id="lookup-range-controls" style="display:none;"><input type="date" id="lookup-start" value="{first_date}" min="{first_date}" max="{last_date}"> <span style="color:var(--text-soft)">→</span> <input type="date" id="lookup-end" value="{last_date}" min="{first_date}" max="{last_date}"></span>
+                    <span style="width:1px;height:22px;background:var(--border);margin:0 4px"></span>
+                    <span class="flabel">Tháng</span>
+{month_buttons}                </div>
+                <div class="frow">
+                    <span class="flabel">Kênh</span>
+                    <div class="chsel">
+                        <button class="ch-pill active" data-channel="all" data-target="main">Tất cả</button>
+                        <button class="ch-pill" data-channel="shopee" data-target="main">Shopee</button>
+                        <button class="ch-pill" data-channel="tiktok" data-target="main">TikTok</button>
+                        <button class="ch-pill" data-channel="web" data-target="main">Website</button>
+                        <button class="ch-pill" data-channel="lazada" data-target="main">Lazada</button>
+                    </div>
+                    <span class="compare-info" id="lookup-compare-info" style="margin-left:auto;font-size:12px;color:var(--text-mid)"></span>
                 </div>
-                <div id="lookup-single-controls">
-                    <label>Chọn ngày:</label>
-                    <input type="date" id="lookup-date" value="{last_date}" min="{first_date}" max="{last_date}">
+            </div>
+            <div class="wrap">
+            <div id="secA" class="grp"><div class="grp-head"><span class="badge-g">A</span><h2>Tổng quan</h2></div></div>
+            <div class="kpi-grid" id="lookup-kpi"></div>
+            <div class="card-note" style="margin-bottom:6px">Doanh thu / đơn / AOV: từ Haravan (đã loại đơn hủy). <b>Phí sàn</b> ước tính theo tỷ lệ lịch sử; <b>Đơn hoàn, Phí quảng cáo</b> chưa nối nguồn — hiện <span class="need-src">cần nguồn</span>.</div>
+
+            <div id="secB" class="grp"><div class="grp-head"><span class="badge-g">B</span><h2>Doanh thu</h2></div></div>
+<div id="secB1" class="sub-anchor"></div>
+            <div class="section-title">B1 · Tổng quan doanh thu các sàn (kênh)</div>
+            <div class="section-grid">
+                <div class="chart-container"><div class="chart-title">各通路對比 Kỳ này vs Hôm trước vs Cùng kỳ tuần trước</div><div class="chart-wrapper"><canvas id="lookup-mom-channel-chart"></canvas></div></div>
+                <div class="table-container" style="height:auto;">
+                    <div class="chart-title">各通路詳細 Chi tiết các kênh (so sánh hôm trước)</div>
+                    <table><thead><tr><th>通路 Kênh</th><th class="right">本期 Kỳ Này</th><th class="right">上期 Hôm Trước</th><th class="right">同期週前 Tuần Trước</th><th>變化 vs Hôm Trước</th></tr></thead><tbody id="lookup-mom-channel-table"></tbody></table>
                 </div>
-                <div id="lookup-range-controls" style="display:none;">
-                    <label>Từ:</label>
-                    <input type="date" id="lookup-start" value="{first_date}" min="{first_date}" max="{last_date}">
-                    <label>Đến:</label>
-                    <input type="date" id="lookup-end" value="{last_date}" min="{first_date}" max="{last_date}">
-                </div>
-                <div class="channel-pills">
-                    <button class="ch-pill active" data-channel="all" data-target="main">Tất cả</button>
-                    <button class="ch-pill" data-channel="shopee" data-target="main">Shopee</button>
-                    <button class="ch-pill" data-channel="tiktok" data-target="main">TikTok</button>
-                    <button class="ch-pill" data-channel="web" data-target="main">Web</button>
-                    <button class="ch-pill" data-channel="lazada" data-target="main">Lazada</button>
-                </div>
-                <div class="compare-info" id="lookup-compare-info"></div>
             </div>
 
-            <div class="section-title">① 關鍵績效指標 KPI Tra Cứu</div>
-            <div class="kpi-grid" id="lookup-kpi"></div>
-
-            <div class="section-title">② 每日營收圖表 Biểu Đồ Doanh Thu Theo Ngày</div>
+            <div id="secB2" class="sub-anchor"></div>
+            <div class="section-title">B2 · Doanh thu theo ngày</div>
             <div class="chart-container"><div class="chart-title">營收趨勢 Xu hướng doanh thu theo ngày trong khoảng đã chọn</div><div class="chart-wrapper"><canvas id="lookup-daily-chart"></canvas></div></div>
 
-            <div class="section-title">③ 對比成長 So Sánh Tăng Trưởng (vs Hôm Trước &amp; Cùng Kỳ Tuần Trước)</div>
+            <div id="secB3" class="sub-anchor"></div>
+            <div class="section-title">B3 · Biểu đồ tăng trưởng (kỳ này vs hôm trước vs tuần trước)</div>
             <div class="section-grid">
                 <div class="chart-container"><div class="chart-title">營收對比 So sánh doanh thu (3 kỳ)</div><div class="chart-wrapper"><canvas id="lookup-trend-chart"></canvas></div></div>
                 <div class="chart-container"><div class="chart-title">各通路營收比較 So sánh kênh (kỳ này)</div><div class="chart-wrapper"><canvas id="lookup-channel-chart"></canvas></div></div>
@@ -1776,7 +1863,12 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 <table><thead><tr><th>Kỳ So Sánh</th><th class="right">營收 Doanh Thu</th><th class="right">訂單 Đơn Hàng</th><th class="right">客單價 AOV</th><th>變化 vs Kỳ Này</th></tr></thead><tbody id="lookup-mom-table"></tbody></table>
             </div>
 
-            <div class="section-title">④ 產品類別營收 Doanh Thu Theo Danh Mục Sản Phẩm</div>
+                        <div id="secB4" class="sub-anchor"></div>
+            <div class="section-title">B4 · Doanh thu theo nguồn (Thẻ SP / Live / Video / Tiếp thị liên kết)</div>
+            <div id="b4-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng (T1–T8)</b> ở thanh lọc để xem doanh thu theo nguồn.</div></div></div>
+            <div id="secC" class="grp"><div class="grp-head"><span class="badge-g">C</span><h2>Sản phẩm</h2></div></div>
+<div id="secC1" class="sub-anchor"></div>
+            <div class="section-title">C1 · Doanh thu theo danh mục sản phẩm</div>
             <div class="section-grid">
                 <div class="chart-container"><div class="chart-title">產品類別營收分佈 Phân bổ doanh thu danh mục</div><div class="chart-wrapper"><canvas id="lookup-category-chart"></canvas></div></div>
                 <div class="table-container" style="height:auto;">
@@ -1785,31 +1877,18 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </div>
             </div>
 
-            <div class="section-title">⑤ 平台費用分析 Chi Phí Sàn &amp; Tỷ Lệ Phí</div>
-            <div class="section-grid">
-                <div class="chart-container"><div class="chart-title">各通路平台費用 Phí sàn các kênh (kỳ này)</div><div class="chart-wrapper"><canvas id="lookup-fees-chart"></canvas></div></div>
-                <div class="table-container" style="height:auto;">
-                    <div class="chart-title">平台費用及費率 Phí sàn và tỷ lệ %</div>
-                    <table><thead><tr><th>通路 Kênh</th><th class="right">營收 Doanh Thu</th><th class="right">平台費用 Phí Sàn</th><th class="right">費率 Tỷ Lệ %</th><th class="right">淨收入 DT Ròng</th></tr></thead><tbody id="lookup-fees-table"></tbody></table>
-                </div>
-            </div>
-
-            <div class="section-title">⑥ 各通路對比 So Sánh Doanh Thu Các Kênh</div>
-            <div class="section-grid">
-                <div class="chart-container"><div class="chart-title">各通路對比 Kỳ này vs Hôm trước vs Cùng kỳ tuần trước</div><div class="chart-wrapper"><canvas id="lookup-mom-channel-chart"></canvas></div></div>
-                <div class="table-container" style="height:auto;">
-                    <div class="chart-title">各通路詳細 Chi tiết các kênh (so sánh hôm trước)</div>
-                    <table><thead><tr><th>通路 Kênh</th><th class="right">本期 Kỳ Này</th><th class="right">上期 Hôm Trước</th><th class="right">同期週前 Tuần Trước</th><th>變化 vs Hôm Trước</th></tr></thead><tbody id="lookup-mom-channel-table"></tbody></table>
-                </div>
-            </div>
-
-            <div class="section-title">⑦ 暢銷產品 SP Bán Chạy Theo Doanh Thu</div>
+                        <div id="secC2" class="sub-anchor"></div>
+            <div class="section-title">C2 · Top 10 sản phẩm bán chạy (Tổng · Shopee · TikTok · Website · Lazada)</div>
             <div class="table-container">
-                <div class="chart-title">Top 5 暢銷產品 Sản phẩm bán chạy trong kỳ đã chọn</div>
-                <table><thead><tr><th>#</th><th>產品名稱 Tên SP</th><th class="right">數量 SL</th><th class="right">營收 Doanh Thu</th></tr></thead><tbody id="lookup-products-table"></tbody></table>
+                <div class="chart-title">🏆 Top 10 theo doanh thu trong kỳ đã chọn — tách theo từng kênh</div>
+                <table><thead><tr><th>#</th><th>Tên SP</th><th class="right">Tổng DT</th><th class="right">Shopee</th><th class="right">TikTok</th><th class="right">Website</th><th class="right">Lazada</th><th class="right">SL</th></tr></thead><tbody id="lookup-top10-table"></tbody></table>
             </div>
-
-            <div class="section-title">🔍 Tra Cứu Chi Tiết 1 Sản Phẩm Theo Ngày &amp; Theo Kênh</div>
+            <div class="table-container" style="margin-top:-8px"><div class="chart-title">Top theo doanh thu (danh sách gộp)</div><table><thead><tr><th>#</th><th>Tên SP</th><th class="right">SL</th><th class="right">Doanh thu</th></tr></thead><tbody id="lookup-products-table"></tbody></table></div>
+            <div id="secC3" class="sub-anchor"></div>
+            <div class="section-title">C3 · Biểu đồ tăng trưởng của Top 10 sản phẩm</div>
+            <div class="table-container"><div class="card-note warn">Sẽ bổ sung biểu đồ tăng trưởng Top 10 (kỳ này vs kỳ trước) trong bản kế tiếp. <span class="need-src">đang dựng</span></div></div>
+<div id="secC4" class="sub-anchor"></div>
+            <div class="section-title">C4 · Tra cứu chi tiết 1 sản phẩm (theo ngày / kênh)</div>
             <div class="lookup-bar">
                 <div class="mode-toggle">
                     <button class="mode-btn active" data-mode="single" data-target="sp">1 ngày</button>
@@ -1853,12 +1932,33 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                         <table><thead><tr><th>Ngày</th><th class="right">SL</th><th class="right">Doanh Thu</th><th>Kênh chính</th></tr></thead><tbody id="lookup-sp-date-table"></tbody></table>
                     </div>
                 </div>
+            </div>            <div id="secD" class="grp"><div class="grp-head"><span class="badge-g">D</span><h2>Chi phí</h2></div></div>
+<div id="secD1" class="sub-anchor"></div>
+            <div class="section-title">D1 · Phí sàn (Tổng · Shopee · TikTok · Website · Lazada)</div>
+            <div class="section-grid">
+                <div class="chart-container"><div class="chart-title">各通路平台費用 Phí sàn các kênh (kỳ này)</div><div class="chart-wrapper"><canvas id="lookup-fees-chart"></canvas></div></div>
+                <div class="table-container" style="height:auto;">
+                    <div class="chart-title">平台費用及費率 Phí sàn và tỷ lệ %</div>
+                    <table><thead><tr><th>通路 Kênh</th><th class="right">營收 Doanh Thu</th><th class="right">平台費用 Phí Sàn</th><th class="right">費率 Tỷ Lệ %</th><th class="right">淨收入 DT Ròng</th></tr></thead><tbody id="lookup-fees-table"></tbody></table>
+                </div>
             </div>
+
+                        <div id="secD2" class="sub-anchor"></div>
+            <div class="section-title">D2 · Biểu đồ % phí sàn qua các tháng</div>
+            <div class="table-container"><div class="card-note warn">Sẽ bổ sung biểu đồ tỷ lệ phí sàn theo tháng trong bản kế tiếp. <span class="need-src">đang dựng</span></div></div>
+            <div id="secD3" class="sub-anchor"></div>
+            <div class="section-title">D3 · Chi tiết các khoản phí sàn</div>
+            <div id="d3-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng (T1–T8)</b> ở thanh lọc để xem chi tiết phí sàn.</div></div></div>
+            <div id="secD4" class="sub-anchor"></div>
+            <div class="section-title">D4 · Phí quảng cáo (phí + VAT = tổng chi phí)</div>
+            <div class="table-container"><div class="card-note warn">Phí quảng cáo hiện chỉ có trong sheet Báo cáo tuần (Shopee/TikTok). Nối liên tục cần file QC. Xem tạm ở tab Báo cáo tuần. <span class="need-src">cần nguồn</span></div></div>
+            </div>
+
         </div>
 
         <!-- ===== BAO CAO HANG TUAN TAB ===== -->
-        <div id="weekly" class="tab-content">
-            <div class="lookup-bar">
+        <div id="weekly" class="panel">
+            <div class="lookup-bar wr-sticky">
                 <div class="mode-toggle">
                     <button class="mode-btn active" data-mode="single" data-target="wr">1 ngày</button>
                     <button class="mode-btn" data-mode="range" data-target="wr">Khoảng ngày</button>
@@ -2111,8 +2211,8 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             </div>
         </div>
 
-        <!-- ===== PLATFORM TABS ===== -->''' + '''
-''' + _generate_platform_tabs() + f'''
+''' + f'''
+    </div>
     </div>
 
     <script>
@@ -2120,13 +2220,13 @@ const D = {data_str};
 const allMonths = {trend_labels};
 const categoryNames={{san:"地板",son:"油漆",congcu:"工具",decor:"裝飾",other:"其他"}};
 const categoryNamesVi={{san:"Sàn nhựa",son:"Sơn tường",congcu:"Công cụ",decor:"Decor",other:"Khác"}};
-const chartColors=["#8B6F47","#C9A961","#A89071","#6B8E5A","#B89970"];
-const chartColorsAlt=["#3D2E1F","#8B6F47","#C9A961","#A6864B","#6B8E5A"];
-const CSS_PRIMARY="#8B6F47";
-const CSS_PRIMARY_RGBA="rgba(139,111,71,0.12)";
-const CSS_TEXT_DARK="#3D2E1F";
-const CSS_ACCENT="#C9A961";
-const CSS_NEUTRAL="#A89071";
+const chartColors=["#0E4D8B","#1B74C4","#0EA5A0","#E0A312","#8B5C9E"];
+const chartColorsAlt=["#0A3A6B","#4a8bc9","#0d9488","#c47f0e","#6d4c8c"];
+const CSS_PRIMARY="#0E4D8B";
+const CSS_PRIMARY_RGBA="rgba(14,77,139,0.12)";
+const CSS_TEXT_DARK="#0A3A6B";
+const CSS_ACCENT="#1B74C4";
+const CSS_NEUTRAL="#4a8bc9";
 const platformNames={{shopee:"Shopee",tiktok:"TikTok",web:"Website",lazada:"Lazada"}};
 const tabToKey={{shopee:"shopee",tiktok:"tiktok",lazada:"lazada",website:"web"}};
 function resolveKey(tid){{return tabToKey[tid]||tid;}}
@@ -2135,6 +2235,8 @@ const DD={daily_str};
 const PRODUCTS={products_str};
 const WEEKLY={weekly_str};
 const SKU_BY_NAME={sku_by_name_str};
+const SUPP={supp_str};
+const SUPP_WEEK={supp_week_str};
 const lookupFirstDate="{first_date}";
 const lookupLastDate="{last_date}";
 let lookupMode="single";
@@ -2142,9 +2244,9 @@ let lookupChannel="all";
 let wrMode="single";
 let wrChannel="all";
 
-function fmt(n){{if(n>=1e9)return (n/1e9).toFixed(2)+"tỷ";if(n>=1e6)return (n/1e6).toFixed(1)+"tr";return n.toString().replace(/\\B(?=(\\d{{3}})+(?!\\d))/g,".");}}
+function fmt(n){{return fmtFull(Math.round(n||0));}}
 function fmtFull(n){{return n.toString().replace(/\\B(?=(\\d{{3}})+(?!\\d))/g,".");}}
-function chg(c,p){{if(!p)return{{pct:"N/A",arrow:"—",color:"#999"}};const pct=((c-p)/p*100).toFixed(1);return{{pct,arrow:pct>=0?"↑":"↓",color:pct>=0?"#6B8E5A":"#B5573D"}};}}
+function chg(c,p){{if(!p)return{{pct:"N/A",arrow:"—",color:"#999"}};const pct=((c-p)/p*100).toFixed(1);return{{pct,arrow:pct>=0?"↑":"↓",color:pct>=0?"#138a5e":"#B5573D"}};}}
 function getPrev(){{const idx=allMonths.indexOf(currentMonth);return idx>0?allMonths[idx-1]:null;}}
 function getD(p,m){{
     if(!m||!D[p]||!D[p][m]) return {{orders:0,revenue:0,fees:0,net:0,daily:{{}},categories:{{san:0,son:0,congcu:0,decor:0,other:0}},products:[],fee_pct:0}};
@@ -2179,7 +2281,7 @@ function renderDaily(platforms,canvasId){{
     platforms.forEach(p=>{{const d=getD(p,currentMonth);Object.keys(d.daily).forEach(y=>{{if(!ad[y])ad[y]=0;ad[y]+=d.daily[y].revenue;}});}});
     const ds=Object.keys(ad).sort((a,b)=>parseInt(a)-parseInt(b)),dvs=ds.map(x=>ad[x]);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"line",data:{{labels:ds,datasets:[{{label:"營收",data:dvs,borderColor:"#8B6F47",backgroundColor:"rgba(139,111,71,0.10)",pointBackgroundColor:"#8B6F47",pointBorderColor:"#FFFCF7",pointBorderWidth:2,pointRadius:4,fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"line",data:{{labels:ds,datasets:[{{label:"營收",data:dvs,borderColor:"#0E4D8B",backgroundColor:"rgba(14,77,139,0.12)",pointBackgroundColor:"#0E4D8B",pointBorderColor:"#ffffff",pointBorderWidth:2,pointRadius:4,fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 /* ③ Trend + channel comparison */
@@ -2188,7 +2290,7 @@ function renderTrend(platforms,canvasId){{
         const p=platforms[0];
         const data=allMonths.map(m=>getD(p,m).revenue);
         if(charts[canvasId])charts[canvasId].destroy();
-        charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"營收",data:data,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+        charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"營收",data:data,backgroundColor:"#0E4D8B",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
     }} else {{
         const datasets=["shopee","tiktok","web","lazada"].map((p,i)=>({{label:platformNames[p],data:allMonths.map(m=>getD(p,m).revenue),backgroundColor:chartColors[i]}}));
         if(charts[canvasId])charts[canvasId].destroy();
@@ -2202,7 +2304,7 @@ function renderChannelCompare(canvasId){{
     const cur=["shopee","tiktok","web","lazada"].map(p=>getD(p,currentMonth).revenue);
     const prev=["shopee","tiktok","web","lazada"].map(p=>getD(p,pm).revenue);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#A89071",borderRadius:6}},{{label:"本月",data:cur,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#4a8bc9",borderRadius:6}},{{label:"本月",data:cur,backgroundColor:"#0E4D8B",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 function renderMomTable(platforms,elId){{
@@ -2274,7 +2376,7 @@ function renderMomChannelChart(canvasId){{
     const cur=platforms.map(p=>getD(p,currentMonth).revenue);
     const prev=platforms.map(p=>getD(p,pm).revenue);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#A89071",borderRadius:6}},{{label:"本月",data:cur,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels,datasets:[{{label:"上月",data:prev,backgroundColor:"#4a8bc9",borderRadius:6}},{{label:"本月",data:cur,backgroundColor:"#0E4D8B",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 function renderMomChannelTable(elId){{
@@ -2314,14 +2416,14 @@ function renderProducts(platforms,elId,showChannel){{
 function renderOrdersTrend(platform,canvasId){{
     const data=allMonths.map(m=>getD(platform,m).orders);
     if(charts[canvasId])charts[canvasId].destroy();
-    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"訂單",data:data,backgroundColor:"#C9A961",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[canvasId]=new Chart(document.getElementById(canvasId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"訂單",data:data,backgroundColor:"#1B74C4",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 }}
 
 /* Platform-specific fee for single platform */
 function renderPlatformFees(platform,chartId,tableId){{
     const feesData=allMonths.map(m=>getD(platform,m).fees);
     if(charts[chartId])charts[chartId].destroy();
-    charts[chartId]=new Chart(document.getElementById(chartId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"平台費用",data:feesData,backgroundColor:"#A6864B",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts[chartId]=new Chart(document.getElementById(chartId),{{type:"bar",data:{{labels:allMonths,datasets:[{{label:"平台費用",data:feesData,backgroundColor:"#1B74C4",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
     let h="";
     allMonths.forEach(m=>{{
         const d=getD(platform,m);
@@ -2422,14 +2524,22 @@ function lookup(){{
     /* (1) KPI */
     const aov=cur.orders?Math.round(cur.revenue/cur.orders):0;
     const aov2=prev.orders?Math.round(prev.revenue/prev.orders):0;
-    const k=[
-        {{l:"營收 Doanh Thu",v:cur.revenue,c:chg(cur.revenue,prev.revenue)}},
-        {{l:"訂單 Đơn Hàng",v:cur.orders,c:chg(cur.orders,prev.orders)}},
-        {{l:"客單價 AOV",v:aov,c:chg(aov,aov2)}},
-        {{l:"平台費 Phí Sàn",v:cur.fees,c:chg(cur.fees,prev.fees)}},
-        {{l:"淨收入 DT Ròng",v:cur.net,c:chg(cur.net,prev.net)}}
-    ];
-    let h="";k.forEach(x=>{{h+=`<div class="kpi-card"><div class="kpi-label">${{x.l}}</div><div class="kpi-value">${{fmt(x.v)}}</div><div class="kpi-change" style="color:${{x.c.color}}">${{x.c.arrow}} ${{x.c.pct}}%</div></div>`;}});
+    function kcard(lbl,val,sub,cls,chgobj){{
+        const v=(val===null||val===undefined)?'<span style="color:var(--text-soft)">—</span>':fmt(val);
+        const foot=chgobj?`<div class="kpi-change" style="color:${{chgobj.color}}">${{chgobj.arrow}} ${{chgobj.pct}}%</div>`:`<div class="kpi-sub">${{sub||"&nbsp;"}}</div>`;
+        return `<div class="kpi-card ${{cls||""}}"><div class="kpi-label">${{lbl}}</div><div class="kpi-value">${{v}}</div>${{foot}}</div>`;
+    }}
+    const _sm=_suppForRange(s,e);
+    const _cs='<span class="need-src">cần nguồn</span>';
+    let h="";
+    h+=kcard("Tổng doanh thu",cur.revenue,"",'',chg(cur.revenue,prev.revenue));
+    h+=kcard("Tổng đơn",cur.orders,"",'',chg(cur.orders,prev.orders));
+    h+=kcard("Đơn hủy (Shopee)", _sm&&_sm.don_huy!=null?_sm.don_huy:null, _sm&&_sm.don_huy!=null?("cả tháng "+_sm.thang):_cs,'k-neutral',null);
+    h+=kcard("Đơn hoàn (tiền)", _sm?_sm.don_hoan:null, _sm?("cả tháng "+_sm.thang):_cs,'k-neutral',null);
+    h+=kcard("AOV",aov,"",'',chg(aov,aov2));
+    h+=kcard(_sm?"Phí sàn (thực)":"Phí sàn (ước tính)", _sm?_sm.phi_san:cur.fees, _sm?("cả tháng "+_sm.thang):"",'k-cost', _sm?null:chg(cur.fees,prev.fees));
+    h+=kcard("Phí quảng cáo",null,_cs,'k-cost',null);
+    h+=kcard("Doanh thu thực", _sm?_sm.dt_thuc:cur.net, _sm?("thực nhận · cả tháng "+_sm.thang):"= DT − phí sàn",'k-net', _sm?null:chg(cur.net,prev.net));
     document.getElementById("lookup-kpi").innerHTML=h;
 
     /* (2) Daily chart */
@@ -2437,11 +2547,11 @@ function lookup(){{
     const dvs=days.map(d=>cur.daily[d].revenue);
     const dlabels=days.map(d=>fmtDate(d));
     if(charts["lookup-daily-chart"])charts["lookup-daily-chart"].destroy();
-    charts["lookup-daily-chart"]=new Chart(document.getElementById("lookup-daily-chart"),{{type:"line",data:{{labels:dlabels,datasets:[{{label:"營收",data:dvs,borderColor:"#8B6F47",backgroundColor:"rgba(139,111,71,0.10)",pointBackgroundColor:"#8B6F47",pointBorderColor:"#FFFCF7",pointBorderWidth:2,pointRadius:4,fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts["lookup-daily-chart"]=new Chart(document.getElementById("lookup-daily-chart"),{{type:"line",data:{{labels:dlabels,datasets:[{{label:"營收",data:dvs,borderColor:"#0E4D8B",backgroundColor:"rgba(14,77,139,0.12)",pointBackgroundColor:"#0E4D8B",pointBorderColor:"#ffffff",pointBorderWidth:2,pointRadius:4,fill:true,tension:.4}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 
     /* (3) Trend compare */
     if(charts["lookup-trend-chart"])charts["lookup-trend-chart"].destroy();
-    charts["lookup-trend-chart"]=new Chart(document.getElementById("lookup-trend-chart"),{{type:"bar",data:{{labels:["週前","昨日","本期"],datasets:[{{label:"營收",data:[prevWeek.revenue,prev.revenue,cur.revenue],backgroundColor:["#B89970","#A89071","#8B6F47"],borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts["lookup-trend-chart"]=new Chart(document.getElementById("lookup-trend-chart"),{{type:"bar",data:{{labels:["週前","昨日","本期"],datasets:[{{label:"營收",data:[prevWeek.revenue,prev.revenue,cur.revenue],backgroundColor:["#9db8d6","#4a8bc9","#0E4D8B"],borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
 
     /* (3b) Channel compare */
     const chLabels=["Shopee","TikTok","Web","Lazada"];
@@ -2488,7 +2598,7 @@ function lookup(){{
     const chPrev=["shopee","tiktok","web","lazada"].map(p=>prev.byChannel[p]||0);
     const chWeek=["shopee","tiktok","web","lazada"].map(p=>prevWeek.byChannel[p]||0);
     if(charts["lookup-mom-channel-chart"])charts["lookup-mom-channel-chart"].destroy();
-    charts["lookup-mom-channel-chart"]=new Chart(document.getElementById("lookup-mom-channel-chart"),{{type:"bar",data:{{labels:chLabels,datasets:[{{label:"週前",data:chWeek,backgroundColor:"#B89970",borderRadius:6}},{{label:"昨日",data:chPrev,backgroundColor:"#A89071",borderRadius:6}},{{label:"本期",data:chCur,backgroundColor:"#8B6F47",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
+    charts["lookup-mom-channel-chart"]=new Chart(document.getElementById("lookup-mom-channel-chart"),{{type:"bar",data:{{labels:chLabels,datasets:[{{label:"週前",data:chWeek,backgroundColor:"#9db8d6",borderRadius:6}},{{label:"昨日",data:chPrev,backgroundColor:"#4a8bc9",borderRadius:6}},{{label:"本期",data:chCur,backgroundColor:"#0E4D8B",borderRadius:6}}]}},options:{{responsive:true,maintainAspectRatio:false,scales:{{y:{{beginAtZero:true}}}}}}}});
     let mch="";
     ["shopee","tiktok","web","lazada"].forEach(p=>{{
         const a=cur.byChannel[p]||0,b=prev.byChannel[p]||0,c=prevWeek.byChannel[p]||0;
@@ -2503,7 +2613,86 @@ function lookup(){{
     }});
     if(!ph)ph='<tr><td colspan="4" style="text-align:center;color:#999;padding:20px;">Không có dữ liệu sản phẩm trong khoảng đã chọn</td></tr>';
     document.getElementById("lookup-products-table").innerHTML=ph;
+    renderTop10Channels();
+    renderSupp(s,e);
     // SP detail co bo dieu khien rieng, khong re-render khi controls main thay doi
+}}
+function _suppForRange(s,e){{
+    if(!window.SUPP||!SUPP.thang)return null;
+    if(s===e)return null;                            // 1 ngày: không áp số cả tháng
+    if(s.slice(0,7)!==e.slice(0,7))return null;      // kỳ phải nằm gọn trong 1 tháng
+    const tag="T"+parseInt(s.slice(5,7),10);
+    const d=SUPP.thang[tag]; if(!d)return null;
+    const sp=d.shopee||{{}}, tk=d.tiktok||{{}};
+    return {{ thang:tag, raw:d,
+        don_hoan:(sp.don_hoan||0)+(tk.hoan_tien||tk.don_hoan||0),
+        phi_san:(sp.phi_san||0)+(tk.phi_san||0),
+        dt_thuc:(sp.dt_thuc||0)+(tk.dt_thuc||0),
+        don_huy:(sp.don_huy!=null?sp.don_huy:null) }};
+}}
+function _b4NguonTable(title, o){{
+    const rows=[["Thẻ sản phẩm",o.the_sp],["Livestream",o.live],["Video",o.video],["Tiếp thị liên kết",o.ttlk]];
+    if(o.quang_cao!=null)rows.push(["Quảng cáo",o.quang_cao]);
+    const tot=o.tong||rows.reduce((a,r)=>a+(r[1]||0),0)||1;
+    let body=rows.map(r=>`<tr><td>${{r[0]}}</td><td class="right">${{r[1]?fmtFull(Math.round(r[1])):"—"}}</td><td class="right">${{r[1]?((r[1]/tot*100).toFixed(1)+"%"):"—"}}</td></tr>`).join("");
+    body+=`<tr style="font-weight:700;background:var(--bg-section)"><td>Tổng</td><td class="right">${{fmtFull(Math.round(tot))}}</td><td class="right">100%</td></tr>`;
+    let dv=(o.dv_hienthi!=null)?`<div class="card-note" style="margin-top:10px">Doanh số từ <b>Dịch vụ Hiển thị</b> (QC Shopee): ${{fmtFull(Math.round(o.dv_hienthi))}} (số riêng, gối lên các nguồn trên)</div>`:"";
+    return `<div class="table-container"><div class="chart-title">${{title}}</div><table><thead><tr><th>Nguồn</th><th class="right">Doanh số</th><th class="right">% Tổng</th></tr></thead><tbody>${{body}}</tbody></table>${{dv}}</div>`;
+}}
+function _tkOverview(o,label){{
+    const rows=[["GMV",o.gmv],["Tổng doanh thu",o.tong_dt],["Số đơn",o.so_don],["Hoàn tiền",o.hoan_tien]];
+    const body=rows.map(r=>`<tr><td>${{r[0]}}</td><td class="right">${{r[1]!=null?fmtFull(Math.round(r[1])):"—"}}</td></tr>`).join("");
+    return `<div class="table-container"><div class="chart-title">TikTok · Tổng quan (tuần ${{label}})</div><table><thead><tr><th>Chỉ tiêu</th><th class="right">Giá trị</th></tr></thead><tbody>${{body}}</tbody></table><div class="card-note" style="margin-top:10px">Chưa có tách nguồn Live/Video/Thẻ SP cho TikTok — gửi ảnh màn <b>GMV theo nguồn</b> (TikTok) để bổ sung.</div></div>`;
+}}
+function renderSupp(s,e){{
+    const b4=document.getElementById("b4-body"), d3=document.getElementById("d3-body");
+    // ---- B4: ưu tiên số theo TUẦN nhập tay, sau đó tới theo THÁNG ----
+    if(b4){{
+        const wk=(window.SUPP_WEEK&&SUPP_WEEK.tuan)?SUPP_WEEK.tuan[s]:null;
+        const sm0=_suppForRange(s,e);
+        if(wk && (!wk.end || wk.end===e)){{
+            let html="";
+            if(wk.shopee)html+=_b4NguonTable(`Shopee · Doanh thu theo nguồn (tuần ${{wk.label||s}})`, wk.shopee);
+            if(wk.tiktok){{
+                if(wk.tiktok.the_sp!=null||wk.tiktok.video!=null) html+=_b4NguonTable(`TikTok · Doanh thu theo nguồn (tuần ${{wk.label||s}})`, wk.tiktok);
+                else html+=_tkOverview(wk.tiktok, wk.label||s);
+            }}
+            b4.innerHTML=html || '<div class="table-container"><div class="card-note">Tuần này chưa nhập số theo nguồn.</div></div>';
+        }} else if(sm0){{
+            const sp=sm0.raw.shopee||{{}}, tk=sm0.raw.tiktok||{{}};
+            let html=(sp.nguon)?_b4NguonTable(`Shopee · Doanh thu theo nguồn (tháng ${{sm0.thang}})`, sp.nguon):"";
+            html+=`<div class="card-note" style="margin-top:10px">TikTok tháng ${{sm0.thang}}: GMV ${{tk.gmv?fmtFull(Math.round(tk.gmv)):"—"}} · Hoàn tiền ${{tk.hoan_tien?fmtFull(Math.round(tk.hoan_tien)):"—"}} · Số đơn ${{tk.so_don||"—"}} (tách Live/Video theo nguồn: gửi ảnh tuần để bổ sung).</div>`;
+            b4.innerHTML=html;
+        }} else {{
+            b4.innerHTML='<div class="table-container"><div class="card-note">Chọn đúng <b>1 tuần đã nhập</b> (VD 31/8–6/9) hoặc <b>1 tháng (T1–T8)</b> để xem doanh thu theo nguồn.</div></div>';
+        }}
+    }}
+    // ---- D3: chi tiết phí sàn theo THÁNG ----
+    if(d3){{
+        const sm=_suppForRange(s,e);
+        if(!sm){{ d3.innerHTML='<div class="table-container"><div class="card-note">Chọn <b>1 tháng (T1–T8)</b> để xem chi tiết phí sàn.</div></div>'; }}
+        else {{
+            const sp=sm.raw.shopee||{{}}, tk=sm.raw.tiktok||{{}};
+            function feeTable(name,arr,total){{
+                if(!arr||!arr.length)return `<div class="table-container" style="margin-bottom:14px"><div class="card-note">${{name}}: chưa có chi tiết phí tháng ${{sm.thang}}.</div></div>`;
+                let b=arr.map(x=>`<tr><td>${{x.ten}}</td><td class="right">${{fmtFull(Math.round(x.gia_tri))}}</td></tr>`).join("");
+                b+=`<tr style="font-weight:700;background:var(--bg-section)"><td>Tổng phí sàn ${{name}}</td><td class="right">${{fmtFull(Math.round(total||0))}}</td></tr>`;
+                return `<div class="table-container" style="margin-bottom:14px"><div class="chart-title">${{name}} · Chi tiết phí sàn (tháng ${{sm.thang}})</div><table><thead><tr><th>Khoản phí</th><th class="right">Số tiền</th></tr></thead><tbody>${{b}}</tbody></table></div>`;
+            }}
+            d3.innerHTML=feeTable("Shopee",sp.chi_tiet_phi,sp.phi_san)+feeTable("TikTok",tk.chi_tiet_phi,tk.phi_san);
+        }}
+    }}
+}}
+function renderTop10Channels(){{
+    const [s,e]=getLookupRange();
+    const chans=["shopee","tiktok","web","lazada"];
+    const agg={{}};
+    chans.forEach(p=>{{ if(!DD[p])return; Object.keys(DD[p]).forEach(d=>{{ if(d>=s&&d<=e){{ (DD[p][d].products||[]).forEach(pr=>{{ const nm=pr.name; if(!agg[nm])agg[nm]={{name:nm,total:0,qty:0,shopee:0,tiktok:0,web:0,lazada:0}}; agg[nm].total+=pr.revenue||0; agg[nm].qty+=pr.qty||0; agg[nm][p]+=pr.revenue||0; }}); }} }}); }});
+    const arr=Object.values(agg).sort((a,b)=>b.total-a.total).slice(0,10);
+    let h="";
+    arr.forEach((p,i)=>{{ h+=`<tr><td>${{i+1}}</td><td>${{p.name}}</td><td class="right"><b>${{fmtFull(Math.round(p.total))}}</b></td><td class="right">${{p.shopee?fmtFull(Math.round(p.shopee)):"—"}}</td><td class="right">${{p.tiktok?fmtFull(Math.round(p.tiktok)):"—"}}</td><td class="right">${{p.web?fmtFull(Math.round(p.web)):"—"}}</td><td class="right">${{p.lazada?fmtFull(Math.round(p.lazada)):"—"}}</td><td class="right">${{fmtFull(p.qty)}}</td></tr>`; }});
+    if(!h)h='<tr><td colspan="8" style="text-align:center;color:#999;padding:16px">Không có dữ liệu trong khoảng đã chọn</td></tr>';
+    const el=document.getElementById("lookup-top10-table"); if(el)el.innerHTML=h;
 }}
 
 /* ===== WEEKLY REPORT ===== */
@@ -2667,7 +2856,7 @@ function renderTrendBlock(chSel, monthKey){{
     // Chart: line cho top 5 nhóm
     const ctx=document.getElementById("wr-trend-chart");
     if(_trendChart)_trendChart.destroy();
-    const palette=["#8B6F47","#C4A572","#5B8C5A","#A86A6A","#6B8CAE","#B8956A","#7A6B8C","#A8896B"];
+    const palette=["#0E4D8B","#1B74C4","#138a5e","#c2362b","#4a8bc9","#E0A312","#8B5C9E","#5b9bd5"];
     const top5=topGroups.slice(0,5);
     _trendChart=new Chart(ctx,{{
         type:"line",
@@ -3380,15 +3569,50 @@ document.addEventListener("click",e=>{{
     }}
 }});
 
-document.querySelectorAll(".month-btn").forEach(b=>{{b.addEventListener("click",e=>{{
-    currentMonth=e.target.dataset.month;
-    document.querySelectorAll(".month-btn").forEach(t=>t.classList.remove("active"));
-    e.target.classList.add("active");
-    const at=document.querySelector(".tab-content.active");
-    if(at.id==="tong-quan")overview();else platform(resolveKey(at.id));
+/* ===== Sidebar + panel navigation ===== */
+function showPanel(id){{
+    document.querySelectorAll(".main .panel").forEach(p=>p.classList.remove("on"));
+    const el=document.getElementById(id); if(el)el.classList.add("on");
+}}
+document.querySelectorAll('.navitem[data-goto]').forEach(a=>{{a.addEventListener("click",ev=>{{
+    ev.preventDefault();
+    showPanel("lookup");
+    document.querySelectorAll('.navitem').forEach(t=>t.classList.remove("on"));
+    a.classList.add("on");
+    const el=document.getElementById(a.dataset.goto);
+    if(el)setTimeout(()=>el.scrollIntoView({{behavior:"smooth",block:"start"}}),30);
+}});}});
+document.querySelectorAll('.navitem[data-panel]').forEach(a=>{{a.addEventListener("click",ev=>{{
+    ev.preventDefault();
+    document.querySelectorAll('.navitem').forEach(t=>t.classList.remove("on"));
+    a.classList.add("on");
+    showPanel(a.dataset.panel);
+    window.scrollTo({{top:0,behavior:"smooth"}});
+    if(a.dataset.panel==="weekly"){{ try{{ renderWeekly(); }}catch(err){{ console.warn(err); }} }}
 }});}});
 
-overview();
+/* ===== Month presets -> set range = whole month ===== */
+function _dataYear(){{ for(const p of ["shopee","tiktok","web","lazada"]){{ if(DD[p]){{ const k=Object.keys(DD[p]); if(k.length)return parseInt(k[0].slice(0,4),10); }} }} return 2026; }}
+function monthRange(mk){{ const m=parseInt(mk.slice(1),10); const y=_dataYear(); const last=new Date(y,m,0).getDate(); const pad=n=>String(n).padStart(2,"0"); return [`${{y}}-${{pad(m)}}-01`,`${{y}}-${{pad(m)}}-${{pad(last)}}`]; }}
+function applyMonthPreset(mk){{
+    document.querySelectorAll('.mpreset').forEach(t=>t.classList.toggle("active",t.dataset.month===mk));
+    lookupMode="range";
+    document.querySelectorAll('#lookup .mode-btn[data-target="main"]').forEach(t=>t.classList.toggle("active",t.dataset.mode==="range"));
+    document.getElementById("lookup-single-controls").style.display="none";
+    document.getElementById("lookup-range-controls").style.display="";
+    const [rs,re]=monthRange(mk); const minD="{first_date}",maxD="{last_date}";
+    document.getElementById("lookup-start").value=(rs<minD?minD:rs);
+    document.getElementById("lookup-end").value=(re>maxD?maxD:re);
+    lookup();
+}}
+document.querySelectorAll('.mpreset').forEach(b=>{{b.addEventListener("click",e=>applyMonthPreset(e.target.dataset.month));}});
+/* Bỏ active preset khi người dùng đổi ngày/kỳ thủ công */
+["lookup-date","lookup-start","lookup-end"].forEach(id=>{{ const el=document.getElementById(id); if(el)el.addEventListener("change",()=>document.querySelectorAll('.mpreset').forEach(t=>t.classList.remove("active"))); }});
+document.querySelectorAll('#lookup .mode-btn[data-target="main"]').forEach(b=>b.addEventListener("click",()=>document.querySelectorAll('.mpreset').forEach(t=>t.classList.remove("active"))));
+
+/* ===== Khởi tạo: mặc định xem tháng gần nhất ===== */
+applyMonthPreset("T"+parseInt("{last_date}".slice(5,7),10));
+try{{ renderWeekly(); }}catch(err){{ console.warn("weekly init:",err); }}
     </script>
 </body>
 </html>'''

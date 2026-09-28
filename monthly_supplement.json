@@ -1,0 +1,606 @@
+{
+ "nam": 2026,
+ "cap_nhat": "28/09/2026 17:20",
+ "thang": {
+  "T1": {
+   "shopee": {
+    "gia_sp": 1106857038.0,
+    "don_hoan": 13120131.0,
+    "giam_gia": 33877259.0,
+    "phi_san": 279117605.0,
+    "dt_thuc": 780742043.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 148150209.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 49236223.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 53818784.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 23902709.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 3975480.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 34200.0
+     }
+    ],
+    "tong_ds": 1785525152.0,
+    "so_don": 3487.0,
+    "don_huy": 768.0,
+    "ds_huy": 546795520.0,
+    "nguon": {
+     "the_sp": null,
+     "live": null,
+     "video": null,
+     "ttlk": null,
+     "quang_cao": null
+    }
+   },
+   "tiktok": {
+    "dt_qt": 272783342.0,
+    "tong_dt": 600570286.0,
+    "don_hoan": 15165170.0,
+    "phi_san": 71258502.0,
+    "dieu_chinh": -2472600.0,
+    "dt_thuc": 272783342.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 14830883.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 26239463.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 3279708.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 19253338.0
+     }
+    ],
+    "gmv": 553187409.0,
+    "so_don": 1613.0,
+    "hoan_tien": 14525448.0,
+    "so_mon": 5031.0
+   }
+  },
+  "T2": {
+   "shopee": {
+    "gia_sp": 724322268.0,
+    "don_hoan": 35064624.0,
+    "giam_gia": 23832823.0,
+    "phi_san": 176137149.0,
+    "dt_thuc": 489287672.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 94763517.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 31733446.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 33050100.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 13719446.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 2870640.0
+     }
+    ],
+    "tong_ds": 1083538837.0,
+    "so_don": 2363.0,
+    "don_huy": 655.0,
+    "ds_huy": 378328031.0,
+    "nguon": {
+     "the_sp": null,
+     "live": null,
+     "video": null,
+     "ttlk": null,
+     "quang_cao": null
+    }
+   },
+   "tiktok": {
+    "dt_qt": 200332942.0,
+    "tong_dt": 559316597.0,
+    "don_hoan": 25959797.0,
+    "phi_san": 53688951.0,
+    "dieu_chinh": -4795662.0,
+    "dt_thuc": 200332942.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 10760082.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 19754018.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 610507.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 11979313.0
+     }
+    ],
+    "gmv": 522252055.0,
+    "so_don": 1711.0,
+    "hoan_tien": 24246672.0,
+    "so_mon": 4952.0
+   }
+  },
+  "T3": {
+   "shopee": {
+    "gia_sp": 1088423084.0,
+    "don_hoan": 14570701.0,
+    "giam_gia": 31401230.0,
+    "phi_san": 269828993.0,
+    "dt_thuc": 772837860.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 146644347.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 48113262.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 51632006.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 19860738.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 3526740.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 51900.0
+     }
+    ],
+    "tong_ds": 1414594564.0,
+    "so_don": 2739.0,
+    "don_huy": 683.0,
+    "ds_huy": 445218523.0,
+    "nguon": {
+     "the_sp": 1027805957.0,
+     "live": 0.0,
+     "video": 75454887.0,
+     "ttlk": 311333720.0,
+     "quang_cao": 905919436.0
+    }
+   },
+   "tiktok": {
+    "dt_qt": 332445433.0,
+    "tong_dt": 715164703.0,
+    "don_hoan": 23360098.0,
+    "phi_san": 105934175.0,
+    "dieu_chinh": -30355610.0,
+    "dt_thuc": 332445433.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 19367208.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 40480668.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 665912.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 25244401.0
+     }
+    ],
+    "gmv": 654008255.0,
+    "so_don": 1794.0,
+    "hoan_tien": 22118160.0,
+    "so_mon": 4836.0
+   }
+  },
+  "T4": {
+   "shopee": {
+    "gia_sp": 916797982.0,
+    "don_hoan": 29870162.0,
+    "giam_gia": 22941211.0,
+    "phi_san": 225699457.0,
+    "dt_thuc": 638303952.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 121713526.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 40172414.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 42892829.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 17770728.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 3139560.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 10400.0
+     }
+    ],
+    "tong_ds": 1276463008.0,
+    "so_don": 2514.0,
+    "don_huy": 628.0,
+    "ds_huy": 431350395.0,
+    "nguon": {
+     "the_sp": 914019176.0,
+     "live": 0.0,
+     "video": 55322450.0,
+     "ttlk": 307121382.0,
+     "quang_cao": 760263640.0
+    }
+   },
+   "tiktok": {
+    "dt_qt": 327331849.0,
+    "tong_dt": 672075845.0,
+    "don_hoan": 17524439.0,
+    "phi_san": 101475670.0,
+    "dieu_chinh": -32298263.0,
+    "dt_thuc": 327331849.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 20208216.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 41424085.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 2665099.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 21634270.0
+     }
+    ],
+    "gmv": 615844695.0,
+    "so_don": 2171.0,
+    "hoan_tien": 16698979.0,
+    "so_mon": 5474.0
+   }
+  },
+  "T5": {
+   "shopee": {
+    "gia_sp": 838766538.0,
+    "don_hoan": 19794899.0,
+    "giam_gia": 19313934.0,
+    "phi_san": 216615720.0,
+    "dt_thuc": 583373880.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 113048530.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 39592889.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 45213143.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 15109798.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 3614760.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 36600.0
+     }
+    ],
+    "tong_ds": 1169830497.0,
+    "so_don": 2711.0,
+    "don_huy": 669.0,
+    "ds_huy": 350441158.0,
+    "nguon": {
+     "the_sp": 853466336.0,
+     "live": 0.0,
+     "video": 92279930.0,
+     "ttlk": 224084231.0,
+     "quang_cao": 680975289.0
+    }
+   },
+   "tiktok": {
+    "dt_qt": 341364770.0,
+    "tong_dt": 752486742.0,
+    "don_hoan": 79784177.0,
+    "phi_san": 119367121.0,
+    "dieu_chinh": -58516578.0,
+    "dt_thuc": 341364770.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 24582181.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 48018482.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 29038.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 20053325.0
+     }
+    ],
+    "gmv": 689696535.0,
+    "so_don": 3056.0,
+    "hoan_tien": 22370720.0,
+    "so_mon": 8064.0
+   }
+  },
+  "T6": {
+   "shopee": {
+    "gia_sp": 767620329.0,
+    "don_hoan": 17941358.0,
+    "giam_gia": 19608588.0,
+    "phi_san": 230954415.0,
+    "dt_thuc": 499933543.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 123590171.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 45574935.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 44334739.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 12496290.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 4958280.0
+     }
+    ],
+    "tong_ds": 1155201400.0,
+    "so_don": 2489.0,
+    "don_huy": 588.0,
+    "ds_huy": 389502993.0,
+    "nguon": {
+     "the_sp": 820302138.0,
+     "live": 885510.0,
+     "video": 157940933.0,
+     "ttlk": 176072819.0,
+     "quang_cao": 626709224.0
+    }
+   },
+   "tiktok": {
+    "dt_qt": 337466910.0,
+    "tong_dt": 671509824.0,
+    "don_hoan": 179796205.0,
+    "phi_san": 115124677.0,
+    "dieu_chinh": -33643256.0,
+    "dt_thuc": 337466910.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 16925970.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 50941891.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 1729989.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 17325270.0
+     }
+    ],
+    "gmv": 595296326.0,
+    "so_don": 2530.0,
+    "hoan_tien": 42106158.0,
+    "so_mon": 6128.0
+   }
+  },
+  "T7": {
+   "shopee": {
+    "gia_sp": 1070140476.0,
+    "don_hoan": 23307192.0,
+    "giam_gia": 28365524.0,
+    "phi_san": 325248345.0,
+    "dt_thuc": 693648675.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 174561084.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 64098102.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 61920776.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 17208892.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 7443900.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 15591.0
+     }
+    ],
+    "tong_ds": 1560761220.0,
+    "so_don": 3780.0,
+    "don_huy": 950.0,
+    "ds_huy": 489397080.0,
+    "nguon": {
+     "the_sp": 1215923156.0,
+     "live": 0.0,
+     "video": 171250562.0,
+     "ttlk": 173587502.0,
+     "quang_cao": 765475869.0
+    }
+   },
+   "tiktok": {
+    "dt_qt": 442261980.0,
+    "tong_dt": 999185760.0,
+    "don_hoan": 281013641.0,
+    "phi_san": 162670041.0,
+    "dieu_chinh": -44635288.0,
+    "dt_thuc": 442261980.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 14224068.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 77783705.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 5975775.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 25164931.0
+     }
+    ],
+    "gmv": 895172982.0,
+    "so_don": 3409.0,
+    "hoan_tien": 43838945.0,
+    "so_mon": 8523.0
+   }
+  },
+  "T8": {
+   "shopee": {
+    "gia_sp": 1349840888.0,
+    "don_hoan": 25328547.0,
+    "giam_gia": 35234033.0,
+    "phi_san": 412744336.0,
+    "dt_thuc": 876710277.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 221041430.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 80712625.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 78512865.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 23332230.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 9023400.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 121786.0
+     }
+    ],
+    "tong_ds": 1862926352.0,
+    "so_don": 4305.0,
+    "don_huy": 959.0,
+    "ds_huy": 522367221.0,
+    "nguon": {
+     "the_sp": 1458446207.0,
+     "live": 0.0,
+     "video": 159029633.0,
+     "ttlk": 245450512.0,
+     "quang_cao": 913600822.0
+    }
+   },
+   "tiktok": {
+    "dt_qt": 482403527.0,
+    "tong_dt": 1101258049.0,
+    "don_hoan": 329833328.0,
+    "phi_san": 187266742.0,
+    "dieu_chinh": -43974305.0,
+    "dt_thuc": 482403527.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 19833296.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 90695846.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 11706145.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 22189438.0
+     }
+    ],
+    "gmv": 959375274.0,
+    "so_don": 3456.0,
+    "hoan_tien": 50660551.0,
+    "so_mon": 8324.0
+   }
+  }
+ }
+}
