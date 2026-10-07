@@ -7,7 +7,21 @@ on:
     # Lưu ý: GitHub có thể chạy trễ vài phút so với giờ hẹn.
     - cron: '30 2 * * *'   # 09:30 giờ VN
     - cron: '30 8 * * *'   # 15:30 giờ VN
-  workflow_dispatch:
+  workflow_dispatch:   # chạy tay, hoặc ô tải file (Apps Script) tự bấm
+    inputs:
+      so_ngay:
+        description: "Số ngày lấy lại đơn từ Haravan (mặc định 14; lần đầu nên nhập 130 để dựng lại từ tháng 6)"
+        required: false
+        default: "14"
+      kiem_tra_tuan:
+        description: "Đối chiếu với Bảng phân tích Haravan: nhập ngày đầu tuần (VD 2026-09-21). Để trống nếu không cần"
+        required: false
+        default: ""
+
+# Nhiều lần chạy liền nhau (VD tải file 2 lần) sẽ xếp hàng, không chạy chồng lên nhau
+concurrency:
+  group: update-dashboard
+  cancel-in-progress: false
 
 jobs:
   update-dashboard:
@@ -26,6 +40,15 @@ jobs:
           python-version: '3.11'
 
       - name: Run update_dashboard.py
+        env:
+          # NGUỒN SỐ 1 — đọc thẳng Haravan: private token (chỉ đọc đơn), điền trong Settings → Secrets and variables → Actions
+          HARAVAN_TOKEN: ${{ secrets.HARAVAN_TOKEN }}
+          HARAVAN_DAYS: ${{ inputs.so_ngay || '14' }}
+          HARAVAN_CHECK_WEEK: ${{ inputs.kiem_tra_tuan }}
+          # Dự phòng — tài khoản Supabase của hệ thống kho (không bắt buộc nếu đã có HARAVAN_TOKEN)
+          SUPABASE_EMAIL: ${{ secrets.SUPABASE_EMAIL }}
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          SUPABASE_KEO_DON: ${{ secrets.SUPABASE_KEO_DON }}   # tuỳ chọn: 1 = tự bấm "Kéo đơn từ Haravan" trước khi đọc
         run: |
           python update_dashboard.py index.html
 
@@ -33,7 +56,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
+          git add index.html haravan_cache.json
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
