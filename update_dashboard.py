@@ -4038,14 +4038,19 @@ def _hv_refund(o):
         if not amt:
             for li in (rf.get("refund_line_items") or []):
                 amt += float(li.get("subtotal") or 0)
-        tot += amt
+        tot += abs(amt)          # Haravan trả tiền hoàn là số ÂM -> lấy trị tuyệt đối
     return tot
 
 
 def _hv_revenue(o, mode=None):
-    """Doanh thu 1 đơn. mode: net (tiền hàng - giảm giá - hoàn) | subtotal | total. Chọn qua biến HARAVAN_REVENUE."""
-    mode = (mode or os.environ.get("HARAVAN_REVENUE") or "net").strip().lower()
+    """Doanh thu 1 đơn. Chọn qua biến HARAVAN_REVENUE:
+       hang (MẶC ĐỊNH, chuẩn theo file xuất đơn của sàn) = tiền hàng - giảm giá
+            (Shopee: Σ Giá ưu đãi × SL − Mã giảm giá của Shop; đơn trả hàng vẫn tính, tiền hoàn xem riêng ở KPI Đơn hoàn)
+       net = tiền hàng - giảm giá - tiền hoàn | subtotal | total"""
+    mode = (mode or os.environ.get("HARAVAN_REVENUE") or "hang").strip().lower()
     f = lambda k: float(o.get(k) or 0)
+    if mode == "hang":
+        return f("total_line_items_price") - f("total_discounts")
     if mode == "total":
         return f("total_price")
     if mode == "subtotal":
