@@ -28,6 +28,9 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{FILE_ID}/export?format=csv&
 WEEKLY_SHEET_ID = "1coZ2UmG8blAfgAwR5Ya8wg2l1BD9DJeHfu9yQCsT4Oo"
 WEEKLY_SHEET_GID = "1188687633"  # gid tab tuần hiện tại (14/9-20/9); đổi gid này mỗi khi sang tab tuần mới
 WEEKLY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{WEEKLY_SHEET_ID}/export?format=csv&gid={WEEKLY_SHEET_GID}"
+# Ô TẢI FILE ở trang Báo cáo tuần -> Apps Script (Google Sheet "LOHO - Dữ liệu tải lên").
+# Dán "URL ứng dụng web" sau khi Deploy apps_script_upload.gs. Để trống = chưa cài (ô tải file chỉ đọc thử).
+UPLOAD_SYNC_URL = ""
 
 SHEETS = {
     "shopee":      {"gid": "1202417447", "type": "processed"},
@@ -522,7 +525,48 @@ def _parse_weekly_csv(csv_text):
     }
 
 
+_UPLOADED = None
+def fetch_uploaded(log=print):
+    """Đọc toàn bộ số liệu đã tải lên qua ô tải file (Apps Script -> Google Sheet). {key: data}"""
+    global _UPLOADED
+    if _UPLOADED is not None:
+        return _UPLOADED
+    _UPLOADED = {}
+    if not UPLOAD_SYNC_URL:
+        return _UPLOADED
+    try:
+        r = subprocess.run(["curl", "-sL", "-m", "60", UPLOAD_SYNC_URL + "?action=get"],
+                           capture_output=True, text=True, timeout=90)
+        j = json.loads(r.stdout)
+        if j.get("ok"):
+            _UPLOADED = j.get("data") or {}
+        log(f"  Dữ liệu tải lên (Google Sheet): {len(_UPLOADED)} mục")
+    except Exception as e:
+        log(f"  ! Không đọc được dữ liệu tải lên ({e}) — bỏ qua, dùng dữ liệu sẵn có")
+    return _UPLOADED
+
+
 def load_weekly_report_data():
+    """Báo cáo tuần: lấy tab Google Sheet (gid) HOẶC file mẫu tải lên — tuần nào mới hơn thì dùng."""
+    data = _load_weekly_base()
+    ups = {k[2:]: v for k, v in fetch_uploaded().items()
+           if k.startswith("r:") and isinstance(v, dict) and v.get("csv")}
+    if not ups:
+        return data
+    latest = max(ups)
+    cur = list((data.get("weeks") or {}).values())
+    cur_start = (cur[0].get("start_date") or "") if cur else ""
+    if latest >= cur_start:
+        try:
+            nd = _parse_weekly_csv(ups[latest]["csv"])
+            print(f"  ✅ Báo cáo tuần lấy từ FILE TẢI LÊN — {list(nd['weeks'].values())[0]['label']}")
+            return nd
+        except Exception as e:
+            print(f"  ! Lỗi đọc báo cáo tuần tải lên ({e}) — dùng tab Google Sheet")
+    return data
+
+
+def _load_weekly_base():
     """Load manual weekly report data — try Google Sheet first, then local JSON fallback."""
     # Try Google Sheet
     try:
@@ -1157,6 +1201,9 @@ def build_daily_json(daily_data, daily_categories_data):
                 "categories": categories,
                 "products": products_list,
             }
+            if d.get("api"):
+                platform_daily[fd]["huy"] = int(d.get("huy", 0) or 0)
+                platform_daily[fd]["hoan"] = int(d.get("hoan", 0) or 0)
         result[platform] = platform_daily
     return result
 
@@ -1223,7 +1270,52 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             except Exception as _e:
                 print(f"  ! Lỗi đọc nguon_tuan.json: {_e}")
             break
+    # Gộp số liệu từ ô tải file (m:Tx:kênh = theo tháng, w:yyyy-mm-dd:kênh = theo tuần) — mới đè cũ
+    for _k, _v in fetch_uploaded().items():
+        _pp = _k.split(":")
+        if len(_pp) != 3 or not isinstance(_v, dict):
+            continue
+        if _pp[0] == "m":
+            _supp.setdefault("thang", {}).setdefault(_pp[1], {}).setdefault(_pp[2], {}).update(_v)
+        elif _pp[0] == "w":
+            _wk = _suppw.setdefault("tuan", {}).setdefault(_pp[1], {})
+            _v = dict(_v)
+            for _mk in ("end", "label"):
+                if _mk in _v:
+                    _wk[_mk] = _v.pop(_mk)
+            _wk.setdefault(_pp[2], {}).update(_v)
+    supp_str = json.dumps(_supp, ensure_ascii=False)
     supp_week_str = json.dumps(_suppw, ensure_ascii=False)
+    # Độ mới dữ liệu đơn Haravan -> ghi chú trên thanh tiêu đề (cảnh báo đỏ nếu cũ hơn 24 giờ)
+    sync_note_html = ""
+    _si = HARAVAN_SOURCE_INFO
+    _last_txt, _stale = "", False
+    if _si.get("last_ms"):
+        _ldt = datetime.fromtimestamp(_si["last_ms"] / 1000)
+        _last_txt = _ldt.strftime("%d/%m/%Y %H:%M")
+        _stale = (datetime.now() - _ldt).total_seconds() > 24 * 3600
+    else:
+        _ln = _si.get("last_ngay") or _si.get("cache_last_ngay") or ""
+        if _ln:
+            _last_txt = f"{_ln[8:10]}/{_ln[5:7]}/{_ln[:4]}"
+            try:
+                _stale = (datetime.now().date() - datetime.strptime(_ln, "%Y-%m-%d").date()).days > 1
+            except Exception:
+                pass
+    _fl = _si.get("file_last_ngay") or ""
+    _file_note = ""
+    if _fl and (not _si.get("last_ms") or _fl > datetime.fromtimestamp(_si["last_ms"] / 1000).strftime("%Y-%m-%d")):
+        _file_note = f' &nbsp;·&nbsp; <span title="Bù từ file danh sách đơn của sàn">Shopee/TikTok bổ sung từ file sàn đến {_fl[8:10]}/{_fl[5:7]}</span>'
+    if _last_txt:
+        _src = _si.get("nguon", "")
+        if _stale:
+            sync_note_html = (f' &nbsp;·&nbsp; <span title="Nguồn: {_src}" style="background:#fdeae7;color:#c2362b;'
+                              f'padding:2px 9px;border-radius:999px;font-weight:600">⚠ Đơn Haravan mới nhất: {_last_txt} — dữ liệu đơn chưa cập nhật</span>')
+        else:
+            sync_note_html = f' &nbsp;·&nbsp; <span title="Nguồn: {_src}">Đơn Haravan đến: {_last_txt}</span>'
+    sync_note_html += _file_note
+    upload_url_js = json.dumps(UPLOAD_SYNC_URL)
+    upload_js = UPLOAD_PARSER_JS + "\n" + UPLOAD_UI_JS
     trend_labels = json.dumps(months)
     # Find latest date with data for default
     all_dates = set()
@@ -1733,6 +1825,20 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
         .wrap {{ padding: 20px 24px; }}
         /* Trang Báo cáo tuần: có padding + ghim thanh lọc ngày/kênh */
         #weekly {{ padding: 16px 24px 24px; }}
+        /* Ô tải file */
+        .upl-box {{ background: var(--bg-card); border: 1.5px dashed var(--primary-light); border-radius: 12px; padding: 12px 18px; margin: 0 0 18px; box-shadow: var(--shadow-sm); }}
+        .upl-box summary {{ cursor: pointer; font-weight: 700; color: var(--primary); font-size: 1em; list-style: none; }}
+        .upl-box summary::-webkit-details-marker {{ display: none; }}
+        .upl-box .upl-hint {{ font-weight: 500; color: var(--text-soft); font-size: .85em; }}
+        .upl-row {{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }}
+        .upl-row input[type=file] {{ font-family: inherit; font-size: 13px; }}
+        .upl-row input[type=password] {{ padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 13px; width: 190px; }}
+        .upl-btn {{ padding: 8px 16px; border: 1.5px solid var(--border); background: #fff; color: var(--text-mid); border-radius: 8px; font-weight: 600; cursor: pointer; font-family: inherit; font-size: 13px; }}
+        .upl-btn.pri {{ background: var(--grad); color: #fff; border-color: transparent; box-shadow: 0 2px 6px rgba(14,77,139,.25); }}
+        .upl-btn:disabled {{ opacity: .45; cursor: not-allowed; box-shadow: none; }}
+        .upl-status {{ margin-top: 10px; font-size: 13px; line-height: 1.5; }}
+        .upl-status.ok {{ color: var(--green-up); }} .upl-status.err {{ color: var(--red-down); }} .upl-status.warn {{ color: #b9770e; }}
+        #upl-result td, #upl-result th {{ padding: 8px 10px; font-size: 12.5px; }}
         #weekly .lookup-bar.wr-sticky {{ position: sticky; top: 50px; z-index: 23; margin: 0 0 16px; box-shadow: var(--shadow-md); }}
         .panel {{ display: none; }}
         .panel.on {{ display: block; animation: fadep .2s ease; }}
@@ -1804,7 +1910,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
     <div class="main">
         <div class="topbar">
             <h1>📊 Báo Cáo Doanh Thu LOHO House 2026</h1>
-            <span class="up">Cập nhật: {today}</span>
+            <span class="up">Cập nhật: {today}{sync_note_html}</span>
         </div>
         <!-- ===== TRA CUU THEO NGAY TAB ===== -->
         <div id="lookup" class="panel on">
@@ -1835,7 +1941,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             <div class="wrap">
             <div id="secA" class="grp"><div class="grp-head"><span class="badge-g">A</span><h2>Tổng quan</h2></div></div>
             <div class="kpi-grid" id="lookup-kpi"></div>
-            <div class="card-note" style="margin-bottom:6px">Doanh thu / đơn / AOV: từ Haravan (đã loại đơn hủy). <b>Phí sàn</b> ước tính theo tỷ lệ lịch sử; <b>Đơn hoàn, Phí quảng cáo</b> chưa nối nguồn — hiện <span class="need-src">cần nguồn</span>.</div>
+            <div class="card-note" style="margin-bottom:6px">Doanh thu / đơn / AOV: từ Haravan (đã loại đơn hủy). Khi chọn <b>trọn 1 tháng</b>: Phí sàn, Đơn hoàn, Doanh thu thực lấy từ file quyết toán; Đơn hủy, Phí quảng cáo lấy từ file sàn (Shopee + TikTok). Chọn khoảng ngày khác: phí sàn là ước tính.</div>
 
             <div id="secB" class="grp"><div class="grp-head"><span class="badge-g">B</span><h2>Doanh thu</h2></div></div>
 <div id="secB1" class="sub-anchor"></div>
@@ -1865,7 +1971,7 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
 
                         <div id="secB4" class="sub-anchor"></div>
             <div class="section-title">B4 · Doanh thu theo nguồn (Thẻ SP / Live / Video / Tiếp thị liên kết)</div>
-            <div id="b4-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng (T1–T8)</b> ở thanh lọc để xem doanh thu theo nguồn.</div></div></div>
+            <div id="b4-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng</b> (nút T1, T2…) ở thanh lọc để xem doanh thu theo nguồn.</div></div></div>
             <div id="secC" class="grp"><div class="grp-head"><span class="badge-g">C</span><h2>Sản phẩm</h2></div></div>
 <div id="secC1" class="sub-anchor"></div>
             <div class="section-title">C1 · Doanh thu theo danh mục sản phẩm</div>
@@ -1948,10 +2054,10 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
             <div class="table-container"><div class="card-note warn">Sẽ bổ sung biểu đồ tỷ lệ phí sàn theo tháng trong bản kế tiếp. <span class="need-src">đang dựng</span></div></div>
             <div id="secD3" class="sub-anchor"></div>
             <div class="section-title">D3 · Chi tiết các khoản phí sàn</div>
-            <div id="d3-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng (T1–T8)</b> ở thanh lọc để xem chi tiết phí sàn.</div></div></div>
+            <div id="d3-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng</b> (nút T1, T2…) ở thanh lọc để xem chi tiết phí sàn.</div></div></div>
             <div id="secD4" class="sub-anchor"></div>
-            <div class="section-title">D4 · Phí quảng cáo (phí + VAT = tổng chi phí)</div>
-            <div class="table-container"><div class="card-note warn">Phí quảng cáo hiện chỉ có trong sheet Báo cáo tuần (Shopee/TikTok). Nối liên tục cần file QC. Xem tạm ở tab Báo cáo tuần. <span class="need-src">cần nguồn</span></div></div>
+            <div class="section-title">D4 · Phí quảng cáo (Shopee Dịch vụ Hiển thị · TikTok GMV Max)</div>
+            <div id="d4-body"><div class="table-container"><div class="card-note">Chọn <b>1 tháng</b> (nút T1, T2…) ở thanh lọc để xem phí quảng cáo.</div></div></div>
             </div>
 
         </div>
@@ -1982,6 +2088,25 @@ def generate_html(data_json, daily_json, products_json, output_path, weekly_data
                 </div>
                 <div class="compare-info" id="wr-compare-info"></div>
             </div>
+
+            <details class="upl-box" id="upl-box">
+                <summary>⬆️ Tải file để cập nhật số liệu <span class="upl-hint">(bấm để mở)</span></summary>
+                <div class="card-note" style="margin:12px 0">
+                    Chọn 1 hoặc nhiều file cùng lúc:
+                    <b>file mẫu Báo cáo tuần</b> (.xlsx — cả trang báo cáo tuần tự cập nhật) ·
+                    <b>doanh số</b> Shopee/TikTok (theo tuần hoặc tháng) ·
+                    <b>quyết toán</b> cả tháng (TikTok .xlsx, Shopee .pdf).<br>
+                    File chỉ được đọc ngay trên máy bạn — <b>không lưu lên web</b>; chỉ các con số được gửi vào Google Sheet.
+                </div>
+                <div class="upl-row">
+                    <input type="file" id="upl-files" multiple accept=".xlsx,.xls,.pdf,.csv">
+                    <input type="password" id="upl-pass" placeholder="Mật khẩu cập nhật" autocomplete="off">
+                    <button class="upl-btn" id="upl-read" type="button">1. Đọc file</button>
+                    <button class="upl-btn pri" id="upl-send" type="button" disabled>2. Gửi cập nhật</button>
+                </div>
+                <div id="upl-status" class="upl-status"></div>
+                <div id="upl-result" style="overflow-x:auto"></div>
+            </details>
 
             <div class="section-title">① A 營收總覽 Doanh Thu Từ Các Sàn (Xuất kho · Sàn · Quyết toán)</div>
             <div class="table-container">
@@ -2235,8 +2360,8 @@ const DD={daily_str};
 const PRODUCTS={products_str};
 const WEEKLY={weekly_str};
 const SKU_BY_NAME={sku_by_name_str};
-const SUPP={supp_str};
-const SUPP_WEEK={supp_week_str};
+var SUPP={supp_str};          // var (không phải const) để window.SUPP tồn tại
+var SUPP_WEEK={supp_week_str};
 const lookupFirstDate="{first_date}";
 const lookupLastDate="{last_date}";
 let lookupMode="single";
@@ -2462,13 +2587,15 @@ function getLookupPlatforms(){{
 
 /* Aggregate ranges of daily data */
 function aggLookup(start,end,platforms){{
-    const result={{revenue:0,orders:0,fees:0,net:0,daily:{{}},categories:{{san:0,son:0,congcu:0,decor:0,other:0}},products:[],byChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},feesByChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},netByChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},ordersByChannel:{{shopee:0,tiktok:0,web:0,lazada:0}}}};
+    const result={{revenue:0,orders:0,fees:0,net:0,daily:{{}},categories:{{san:0,son:0,congcu:0,decor:0,other:0}},products:[],byChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},feesByChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},netByChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},ordersByChannel:{{shopee:0,tiktok:0,web:0,lazada:0}},huy:0,hoan:0,apiDays:0,dataDays:0,apiFrom:""}};
     const productMap={{}};
     platforms.forEach(p=>{{
         if(!DD[p])return;
         Object.keys(DD[p]).forEach(d=>{{
             if(d>=start&&d<=end){{
                 const day=DD[p][d];
+                result.dataDays++;
+                if(day.huy!=null){{result.huy+=day.huy;result.hoan+=(day.hoan||0);result.apiDays++;if(!result.apiFrom||d<result.apiFrom)result.apiFrom=d;}}
                 result.revenue+=day.revenue;
                 result.orders+=day.orders;
                 result.fees+=day.fees;
@@ -2529,16 +2656,28 @@ function lookup(){{
         const foot=chgobj?`<div class="kpi-change" style="color:${{chgobj.color}}">${{chgobj.arrow}} ${{chgobj.pct}}%</div>`:`<div class="kpi-sub">${{sub||"&nbsp;"}}</div>`;
         return `<div class="kpi-card ${{cls||""}}"><div class="kpi-label">${{lbl}}</div><div class="kpi-value">${{v}}</div>${{foot}}</div>`;
     }}
-    const _sm=_suppForRange(s,e);
-    const _cs='<span class="need-src">cần nguồn</span>';
+    // Số cả tháng (quyết toán, QC, đơn hủy) chỉ áp khi chọn TRỌN 1 tháng — tránh đặt số cả tháng cạnh doanh thu 1 tuần
+    const _mEnd=s.slice(0,8)+String(new Date(+s.slice(0,4),+s.slice(5,7),0).getDate()).padStart(2,"0");
+    const _isFull=s.slice(8)==="01" && (e===_mEnd || e===lookupLastDate);
+    const _sm=_isFull?_suppForRange(s,e,platforms):null;
+    const _cs=(!_sm&&_suppForRange(s,e,platforms))?'<span class="need-src">chọn trọn tháng</span>':'<span class="need-src">cần nguồn</span>';
     let h="";
     h+=kcard("Tổng doanh thu",cur.revenue,"",'',chg(cur.revenue,prev.revenue));
     h+=kcard("Tổng đơn",cur.orders,"",'',chg(cur.orders,prev.orders));
-    h+=kcard("Đơn hủy (Shopee)", _sm&&_sm.don_huy!=null?_sm.don_huy:null, _sm&&_sm.don_huy!=null?("cả tháng "+_sm.thang):_cs,'k-neutral',null);
-    h+=kcard("Đơn hoàn (tiền)", _sm?_sm.don_hoan:null, _sm?("cả tháng "+_sm.thang):_cs,'k-neutral',null);
+    if(cur.apiDays>0){{
+        const _apiSub = cur.apiDays<cur.dataDays ? ("Haravan · tính từ "+fmtDate(cur.apiFrom)) : "Haravan";
+        const _pAll = prev.apiDays>0 && prev.apiDays===prev.dataDays && cur.apiDays===cur.dataDays;
+        h+=kcard("Đơn hủy", cur.huy, _apiSub, 'k-neutral', _pAll?chg(cur.huy,prev.huy):null);
+        h+=kcard("Đơn hoàn (tiền)", cur.hoan, _apiSub, 'k-neutral', _pAll?chg(cur.hoan,prev.hoan):null);
+    }} else {{
+        const _hSub=(_sm&&_sm.don_huy!=null)?("cả tháng "+_sm.thang+(_sm.huyS!=null&&_sm.huyT!=null?(" · Shopee "+fmtFull(_sm.huyS)+" · TikTok "+fmtFull(_sm.huyT)):(_sm.huyS!=null?" · Shopee":" · TikTok"))):_cs;
+        h+=kcard("Đơn hủy", _sm&&_sm.don_huy!=null?_sm.don_huy:null, _hSub,'k-neutral',null);
+        h+=kcard("Đơn hoàn (tiền)", _sm?_sm.don_hoan:null, _sm?("cả tháng "+_sm.thang):_cs,'k-neutral',null);
+    }}
     h+=kcard("AOV",aov,"",'',chg(aov,aov2));
     h+=kcard(_sm?"Phí sàn (thực)":"Phí sàn (ước tính)", _sm?_sm.phi_san:cur.fees, _sm?("cả tháng "+_sm.thang):"",'k-cost', _sm?null:chg(cur.fees,prev.fees));
-    h+=kcard("Phí quảng cáo",null,_cs,'k-cost',null);
+    const _qSub=(_sm&&_sm.qc!=null)?("cả tháng "+_sm.thang+(_sm.qcS!=null&&_sm.qcT!=null?" · Shopee + TikTok":(_sm.qcS!=null?" · Shopee":" · TikTok"))+" · chưa VAT"):(_sm?'<span class="need-src">chưa có file QC tháng này</span>':_cs);
+    h+=kcard("Phí quảng cáo",(_sm&&_sm.qc!=null)?_sm.qc:null,_qSub,'k-cost',null);
     h+=kcard("Doanh thu thực", _sm?_sm.dt_thuc:cur.net, _sm?("thực nhận · cả tháng "+_sm.thang):"= DT − phí sàn",'k-net', _sm?null:chg(cur.net,prev.net));
     document.getElementById("lookup-kpi").innerHTML=h;
 
@@ -2617,27 +2756,36 @@ function lookup(){{
     renderSupp(s,e);
     // SP detail co bo dieu khien rieng, khong re-render khi controls main thay doi
 }}
-function _suppForRange(s,e){{
+function _suppForRange(s,e,pl){{
     if(!window.SUPP||!SUPP.thang)return null;
     if(s===e)return null;                            // 1 ngày: không áp số cả tháng
     if(s.slice(0,7)!==e.slice(0,7))return null;      // kỳ phải nằm gọn trong 1 tháng
     const tag="T"+parseInt(s.slice(5,7),10);
     const d=SUPP.thang[tag]; if(!d)return null;
-    const sp=d.shopee||{{}}, tk=d.tiktok||{{}};
-    return {{ thang:tag, raw:d,
+    const useS=!pl||pl.indexOf("shopee")>=0, useT=!pl||pl.indexOf("tiktok")>=0;
+    if(!useS&&!useT)return null;                     // chỉ chọn Web/Lazada: không có file sàn
+    const sp=useS?(d.shopee||{{}}):{{}}, tk=useT?(d.tiktok||{{}}):{{}};
+    const qS=(sp.qc&&sp.qc.chi_phi!=null)?sp.qc.chi_phi:null, qT=(tk.qc&&tk.qc.chi_phi!=null)?tk.qc.chi_phi:null;
+    const hS=(sp.don_huy!=null)?sp.don_huy:null, hT=(tk.don_huy!=null)?tk.don_huy:null;
+    return {{ thang:tag, raw:d, useS, useT,
         don_hoan:(sp.don_hoan||0)+(tk.hoan_tien||tk.don_hoan||0),
         phi_san:(sp.phi_san||0)+(tk.phi_san||0),
         dt_thuc:(sp.dt_thuc||0)+(tk.dt_thuc||0),
-        don_huy:(sp.don_huy!=null?sp.don_huy:null) }};
+        don_huy:(hS==null&&hT==null)?null:(hS||0)+(hT||0), huyS:hS, huyT:hT,
+        qc:(qS==null&&qT==null)?null:(qS||0)+(qT||0), qcS:qS, qcT:qT }};
 }}
 function _b4NguonTable(title, o){{
     const rows=[["Thẻ sản phẩm",o.the_sp],["Livestream",o.live],["Video",o.video],["Tiếp thị liên kết",o.ttlk]];
-    if(o.quang_cao!=null)rows.push(["Quảng cáo",o.quang_cao]);
     const tot=o.tong||rows.reduce((a,r)=>a+(r[1]||0),0)||1;
+    if(o.dv_hienthi==null && o.quang_cao!=null) o=Object.assign({{}},o,{{dv_hienthi:o.quang_cao}});
     let body=rows.map(r=>`<tr><td>${{r[0]}}</td><td class="right">${{r[1]?fmtFull(Math.round(r[1])):"—"}}</td><td class="right">${{r[1]?((r[1]/tot*100).toFixed(1)+"%"):"—"}}</td></tr>`).join("");
     body+=`<tr style="font-weight:700;background:var(--bg-section)"><td>Tổng</td><td class="right">${{fmtFull(Math.round(tot))}}</td><td class="right">100%</td></tr>`;
     let dv=(o.dv_hienthi!=null)?`<div class="card-note" style="margin-top:10px">Doanh số từ <b>Dịch vụ Hiển thị</b> (QC Shopee): ${{fmtFull(Math.round(o.dv_hienthi))}} (số riêng, gối lên các nguồn trên)</div>`:"";
     return `<div class="table-container"><div class="chart-title">${{title}}</div><table><thead><tr><th>Nguồn</th><th class="right">Doanh số</th><th class="right">% Tổng</th></tr></thead><tbody>${{body}}</tbody></table>${{dv}}</div>`;
+}}
+function _tkNote(o){{
+    if(!o||o.live_tong==null)return "";
+    return `<div class="card-note" style="margin-top:6px">TikTok chia theo loại nội dung: <b>LIVE</b> ${{fmtFull(Math.round(o.live_tong))}} (liên kết ${{fmtFull(Math.round(o.live_lk||0))}}) · <b>Video</b> ${{fmtFull(Math.round(o.video_tong))}} (liên kết ${{fmtFull(Math.round(o.video_lk||0))}}) · <b>Thẻ sản phẩm</b> ${{fmtFull(Math.round(o.the_sp||0))}}. Bảng trên tách phần <b>liên kết</b> (LIVE + Video của nhà sáng tạo) ra dòng Tiếp thị liên kết.</div>`;
 }}
 function _tkOverview(o,label){{
     const rows=[["GMV",o.gmv],["Tổng doanh thu",o.tong_dt],["Số đơn",o.so_don],["Hoàn tiền",o.hoan_tien]];
@@ -2654,23 +2802,25 @@ function renderSupp(s,e){{
             let html="";
             if(wk.shopee)html+=_b4NguonTable(`Shopee · Doanh thu theo nguồn (tuần ${{wk.label||s}})`, wk.shopee);
             if(wk.tiktok){{
-                if(wk.tiktok.the_sp!=null||wk.tiktok.video!=null) html+=_b4NguonTable(`TikTok · Doanh thu theo nguồn (tuần ${{wk.label||s}})`, wk.tiktok);
+                if(wk.tiktok.the_sp!=null||wk.tiktok.video!=null) html+=_b4NguonTable(`TikTok · GMV theo nguồn (tuần ${{wk.label||s}})`, wk.tiktok)+_tkNote(wk.tiktok);
                 else html+=_tkOverview(wk.tiktok, wk.label||s);
             }}
             b4.innerHTML=html || '<div class="table-container"><div class="card-note">Tuần này chưa nhập số theo nguồn.</div></div>';
         }} else if(sm0){{
             const sp=sm0.raw.shopee||{{}}, tk=sm0.raw.tiktok||{{}};
-            let html=(sp.nguon)?_b4NguonTable(`Shopee · Doanh thu theo nguồn (tháng ${{sm0.thang}})`, sp.nguon):"";
-            html+=`<div class="card-note" style="margin-top:10px">TikTok tháng ${{sm0.thang}}: GMV ${{tk.gmv?fmtFull(Math.round(tk.gmv)):"—"}} · Hoàn tiền ${{tk.hoan_tien?fmtFull(Math.round(tk.hoan_tien)):"—"}} · Số đơn ${{tk.so_don||"—"}} (tách Live/Video theo nguồn: gửi ảnh tuần để bổ sung).</div>`;
+            const _okS=sp.nguon&&(sp.nguon.the_sp!=null||sp.nguon.video!=null);
+            let html=_okS?_b4NguonTable(`Shopee · Doanh thu theo nguồn (tháng ${{sm0.thang}})`, sp.nguon):`<div class="table-container" style="margin-bottom:10px"><div class="card-note">Shopee tháng ${{sm0.thang}}: file doanh số chưa có bảng doanh thu theo nguồn.</div></div>`;
+            if(tk.nguon) html+=_b4NguonTable(`TikTok · GMV theo nguồn (tháng ${{sm0.thang}})`, tk.nguon)+_tkNote(tk.nguon);
+            else html+=`<div class="card-note" style="margin-top:10px">TikTok tháng ${{sm0.thang}}: GMV ${{tk.gmv?fmtFull(Math.round(tk.gmv)):"—"}} · Hoàn tiền ${{tk.hoan_tien?fmtFull(Math.round(tk.hoan_tien)):"—"}} · Số đơn ${{tk.so_don||"—"}}.</div>`;
             b4.innerHTML=html;
         }} else {{
-            b4.innerHTML='<div class="table-container"><div class="card-note">Chọn đúng <b>1 tuần đã nhập</b> (VD 31/8–6/9) hoặc <b>1 tháng (T1–T8)</b> để xem doanh thu theo nguồn.</div></div>';
+            b4.innerHTML='<div class="table-container"><div class="card-note">Chọn đúng <b>1 tuần đã nhập</b> (VD 31/8–6/9) hoặc <b>1 tháng</b> (nút T1, T2…) để xem doanh thu theo nguồn.</div></div>';
         }}
     }}
     // ---- D3: chi tiết phí sàn theo THÁNG ----
     if(d3){{
         const sm=_suppForRange(s,e);
-        if(!sm){{ d3.innerHTML='<div class="table-container"><div class="card-note">Chọn <b>1 tháng (T1–T8)</b> để xem chi tiết phí sàn.</div></div>'; }}
+        if(!sm){{ d3.innerHTML='<div class="table-container"><div class="card-note">Chọn <b>1 tháng</b> (nút T1, T2…) để xem chi tiết phí sàn.</div></div>'; }}
         else {{
             const sp=sm.raw.shopee||{{}}, tk=sm.raw.tiktok||{{}};
             function feeTable(name,arr,total){{
@@ -2680,6 +2830,35 @@ function renderSupp(s,e){{
                 return `<div class="table-container" style="margin-bottom:14px"><div class="chart-title">${{name}} · Chi tiết phí sàn (tháng ${{sm.thang}})</div><table><thead><tr><th>Khoản phí</th><th class="right">Số tiền</th></tr></thead><tbody>${{b}}</tbody></table></div>`;
             }}
             d3.innerHTML=feeTable("Shopee",sp.chi_tiet_phi,sp.phi_san)+feeTable("TikTok",tk.chi_tiet_phi,tk.phi_san);
+        }}
+    }}
+    // ---- D4: phí quảng cáo theo THÁNG ----
+    const d4=document.getElementById("d4-body");
+    if(d4){{
+        const sm=_suppForRange(s,e);
+        if(!sm){{ d4.innerHTML='<div class="table-container"><div class="card-note">Chọn <b>1 tháng</b> (nút T1, T2…) ở thanh lọc để xem phí quảng cáo.</div></div>'; }}
+        else {{
+            const sp=sm.raw.shopee||{{}}, tk=sm.raw.tiktok||{{}};
+            const F=v=>(v==null?"—":fmtFull(Math.round(v)));
+            const P=(a,b)=>(a!=null&&b)?((a/b*100).toFixed(2).replace(".",",")+"%"):"—";
+            const R=(a,b)=>(a!=null&&b)?(a/b).toFixed(2).replace(".",","):"—";
+            const qs=sp.qc||null, qt=tk.qc||null;
+            if(!qs&&!qt){{ d4.innerHTML=`<div class="table-container"><div class="card-note">Tháng ${{sm.thang}} chưa có file quảng cáo. Tải ở ô <b>Tải file</b> (trang Báo cáo tuần): Shopee <b>Dữ liệu Dịch vụ Hiển thị (.csv)</b> và TikTok <b>Campaign overview data (.xlsx)</b>, chọn trọn tháng.</div></div>`; }}
+            else {{
+                const tdS=sp.tong_ds, tdT=tk.gmv;
+                const rows=[
+                    ["Chi phí quảng cáo (chưa VAT)", F(qs&&qs.chi_phi), F(qt&&qt.chi_phi), F((qs?qs.chi_phi:0)+(qt?qt.chi_phi:0))],
+                    ["Doanh số từ quảng cáo", F(qs&&qs.doanh_so), F(qt&&qt.doanh_thu), F((qs?qs.doanh_so:0)+(qt?qt.doanh_thu:0))],
+                    ["Số đơn từ quảng cáo", F(qs&&qs.don), F(qt&&qt.don), F((qs?qs.don:0)+(qt?qt.don:0))],
+                    ["ROAS (doanh số / chi phí)", qs?R(qs.doanh_so,qs.chi_phi):"—", qt?R(qt.doanh_thu,qt.chi_phi):"—", "—"],
+                    ["Tỷ lệ chi phí / doanh số QC", qs?P(qs.chi_phi,qs.doanh_so):"—", qt?P(qt.chi_phi,qt.doanh_thu):"—", "—"],
+                    ["Tỷ lệ chi phí QC / tổng doanh số sàn", qs?P(qs.chi_phi,tdS):"—", qt?P(qt.chi_phi,tdT):"—", (qs&&qt&&tdS&&tdT)?P(qs.chi_phi+qt.chi_phi,tdS+tdT):"—"],
+                ];
+                let b=rows.map(r=>`<tr><td>${{r[0]}}</td><td class="right">${{r[1]}}</td><td class="right">${{r[2]}}</td><td class="right"><b>${{r[3]}}</b></td></tr>`).join("");
+                let note=`Shopee: báo cáo <b>Dịch vụ Hiển thị</b>${{qs&&qs.so_chien_dich?(" ("+qs.so_chien_dich+" chiến dịch)"):""}} · TikTok: <b>GMV Max</b>. Tổng doanh số sàn: Shopee = doanh số đơn đã đặt (${{F(tdS)}}), TikTok = GMV (${{F(tdT)}}).`;
+                if(tk.qc_quyet_toan) note+=` TikTok đã trừ vào quyết toán tháng ${{sm.thang}}: <b>${{F(tk.qc_quyet_toan)}}</b> (dòng "GMV thanh toán cho Quảng cáo TikTok", đã gồm thuế).`;
+                d4.innerHTML=`<div class="table-container"><div class="chart-title">Phí quảng cáo tháng ${{sm.thang}}</div><table><thead><tr><th>Chỉ tiêu</th><th class="right">Shopee</th><th class="right">TikTok</th><th class="right">Tổng</th></tr></thead><tbody>${{b}}</tbody></table><div class="card-note" style="margin-top:10px">${{note}}</div></div>`;
+            }}
         }}
     }}
 }}
@@ -3614,6 +3793,10 @@ document.querySelectorAll('#lookup .mode-btn[data-target="main"]').forEach(b=>b.
 applyMonthPreset("T"+parseInt("{last_date}".slice(5,7),10));
 try{{ renderWeekly(); }}catch(err){{ console.warn("weekly init:",err); }}
     </script>
+<script>
+const UPLOAD_URL={upload_url_js};
+{upload_js}
+</script>
 </body>
 </html>'''
 
@@ -3719,8 +3902,281 @@ def _save_haravan_cache(cache, log=print):
         log(f"  ! Lỗi lưu cache Haravan: {e}")
 
 
-def fetch_haravan_orders():
-    """Tải đơn Haravan (action=load), gộp theo mã đơn, loại đơn hủy. Trả list order-record."""
+# ---- NGUỒN ĐƠN CHÍNH (từ 25/09/2026): Supabase của hệ thống kho (thay Google Sheets/Apps Script) ----
+SUPABASE_URL = "https://qoyzbzisvhsqtvdtfwir.supabase.co"
+SUPABASE_ANON = "sb_publishable_PuO8fm-O2zixUoMA74I-jQ_CUS-Be1J"   # khoá công khai (vốn có sẵn trong trang kho)
+SUPABASE_FN_KEO_DON = "swift-function"                          # Edge Function "Kéo đơn từ Haravan"
+# Tài khoản đăng nhập lấy từ GitHub Secrets: SUPABASE_EMAIL, SUPABASE_PASSWORD (không ghi vào code).
+# Tuỳ chọn SUPABASE_KEO_DON=1: trước khi đọc, tự bấm "Kéo đơn từ Haravan" giống nút trong hệ thống kho.
+HARAVAN_SOURCE_INFO = {}   # nguồn + độ mới của dữ liệu đơn, hiện trên thanh tiêu đề dashboard
+
+
+def _http_json(url, payload=None, headers=None, timeout=240):
+    import urllib.request, urllib.error
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8")[:200]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {e.code}: {body}")
+
+
+def _supabase_orders(log=print):
+    """Đăng nhập Supabase bằng tài khoản trong GitHub Secrets rồi gọi kho_pull. None = chưa cài tài khoản."""
+    email = os.environ.get("SUPABASE_EMAIL", "").strip()
+    pw = os.environ.get("SUPABASE_PASSWORD", "")
+    if not email or not pw:
+        log("  (Chưa cài SUPABASE_EMAIL / SUPABASE_PASSWORD trong GitHub Secrets — bỏ qua Supabase)")
+        return None
+    tok = _http_json(SUPABASE_URL + "/auth/v1/token?grant_type=password",
+                     {"email": email, "password": pw}, {"apikey": SUPABASE_ANON}, 60)
+    at = tok.get("access_token")
+    if not at:
+        raise RuntimeError("đăng nhập Supabase không thành công")
+    ha = {"apikey": SUPABASE_ANON, "Authorization": "Bearer " + at}
+    if os.environ.get("SUPABASE_KEO_DON", "").strip().lower() in ("1", "true", "yes", "co", "có"):
+        try:
+            k = _http_json(SUPABASE_URL + "/functions/v1/" + SUPABASE_FN_KEO_DON, {}, ha, 240)
+            log(f"  Kéo đơn Haravan -> Supabase: mới {k.get('added', 0)}, cập nhật {k.get('updated', 0)}")
+        except Exception as e:
+            log(f"  ! Kéo đơn Haravan (Edge Function) lỗi: {e} — vẫn đọc dữ liệu đang có")
+    j = _http_json(SUPABASE_URL + "/rest/v1/rpc/kho_pull", {"since": "1970-01-01T00:00:00Z"}, ha, 280)
+    return [o for o in (j.get("orders") or []) if isinstance(o, dict) and not o.get("_del")]
+
+
+def _ms_of(v):
+    """_ts/_ct của đơn: số mili-giây hoặc chuỗi ISO -> mili-giây (0 nếu không đọc được)."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str) and v:
+        try:
+            return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp() * 1000
+        except Exception:
+            return 0.0
+    return 0.0
+
+
+# ---- NGUỒN ĐƠN SỐ 1: đọc THẲNG Haravan API bằng private token (GitHub Secret HARAVAN_TOKEN, quyền chỉ đọc đơn) ----
+HARAVAN_API = "https://apis.haravan.com/com/orders.json"
+HARAVAN_API_FIELDS = ("id,name,created_at,cancelled_status,cancelled_at,financial_status,source_name,source,"
+                      "total_price,subtotal_price,total_discounts,total_line_items_price,refunds,line_items")
+
+
+def _hv_get(url, token, tries=6):
+    import urllib.request, urllib.error, time
+    for i in range(tries):
+        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503, 504) and i < tries - 1:
+                ra = e.headers.get("Retry-After")
+                try:
+                    wait = float(ra) if ra else 2.0 * (i + 1)
+                except Exception:
+                    wait = 2.0 * (i + 1)
+                time.sleep(min(wait, 30))
+                continue
+            body = ""
+            try:
+                body = e.read().decode("utf-8")[:200]
+            except Exception:
+                pass
+            raise RuntimeError(f"Haravan API HTTP {e.code}: {body}")
+        except Exception:
+            if i < tries - 1:
+                time.sleep(2.0 * (i + 1))
+                continue
+            raise
+
+
+def _hv_vn_time(iso):
+    """Chuỗi thời gian ISO của Haravan (UTC) -> datetime giờ Việt Nam (UTC+7)."""
+    from datetime import timedelta
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?", iso or "")
+    if not m:
+        return None
+    dt = datetime(*map(int, m.groups()[:6]))
+    tz = m.group(7)
+    off = 0
+    if tz and tz != "Z":
+        sign = 1 if tz[0] == "+" else -1
+        off = sign * (int(tz[1:3]) * 60 + int(tz[-2:]))
+    return dt - timedelta(minutes=off) + timedelta(hours=7)
+
+
+def _hv_kenh(o):
+    s = f"{o.get('source_name') or ''} {o.get('source') or ''}".lower()
+    if "shopee" in s:
+        return "Shopee"
+    if "tiktok" in s:
+        return "TikTok"
+    if "lazada" in s:
+        return "Lazada"
+    return "Website"
+
+
+def _hv_refund(o):
+    """Tổng tiền hoàn của đơn (từ danh sách refunds)."""
+    tot = 0.0
+    for rf in (o.get("refunds") or []):
+        amt = 0.0
+        for t in (rf.get("transactions") or []):
+            if (t.get("kind") or "").lower() == "refund" and (t.get("status") or "success").lower() == "success":
+                amt += float(t.get("amount") or 0)
+        if not amt:
+            for li in (rf.get("refund_line_items") or []):
+                amt += float(li.get("subtotal") or 0)
+        tot += amt
+    return tot
+
+
+def _hv_revenue(o, mode=None):
+    """Doanh thu 1 đơn. mode: net (tiền hàng - giảm giá - hoàn) | subtotal | total. Chọn qua biến HARAVAN_REVENUE."""
+    mode = (mode or os.environ.get("HARAVAN_REVENUE") or "net").strip().lower()
+    f = lambda k: float(o.get(k) or 0)
+    if mode == "total":
+        return f("total_price")
+    if mode == "subtotal":
+        return f("subtotal_price")
+    return f("total_line_items_price") - f("total_discounts") - _hv_refund(o)
+
+
+def _haravan_api_orders(token, days, log=print):
+    """Tải đơn Haravan tạo trong `days` ngày gần nhất (giờ VN), mọi trạng thái, từng ngày một."""
+    import urllib.parse, time
+    from datetime import timedelta
+    now_vn = datetime.utcnow() + timedelta(hours=7)
+    day = (now_vn - timedelta(days=max(1, days) - 1)).date()
+    out = []
+    while day <= now_vn.date():
+        a = datetime(day.year, day.month, day.day) - timedelta(hours=7)          # 00:00 giờ VN -> UTC
+        b = a + timedelta(days=1) - timedelta(seconds=1)
+        page, n_day = 1, 0
+        while page <= 200:
+            q = urllib.parse.urlencode({
+                "status": "any", "limit": 50, "page": page, "order": "created_at asc",
+                "created_at_min": a.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "created_at_max": b.strftime("%Y-%m-%dT%H:%M:%S.999Z"),
+                "fields": HARAVAN_API_FIELDS})
+            arr = (_hv_get(HARAVAN_API + "?" + q, token) or {}).get("orders") or []
+            out.extend(arr)
+            n_day += len(arr)
+            if len(arr) < 50:
+                break
+            page += 1
+            time.sleep(0.25)
+        day += timedelta(days=1)
+    log(f"  Haravan API: {len(out)} đơn ({days} ngày gần nhất, gồm cả đơn hủy)")
+    return out
+
+
+def _hv_to_recs(orders):
+    recs = []
+    for o in orders:
+        t = _hv_vn_time(o.get("created_at"))
+        if not t:
+            continue
+        huy = (o.get("cancelled_status") or "").lower() == "cancelled" or bool(o.get("cancelled_at"))
+        lines = [{"tenSan": li.get("title") or li.get("name") or "", "sku": li.get("sku") or "",
+                  "sl": li.get("quantity") or 0, "mau": li.get("variant_title") or ""}
+                 for li in (o.get("line_items") or [])]
+        recs.append({"ngay": t.strftime("%Y-%m-%d"), "kenh": _hv_kenh(o), "tien": _hv_revenue(o),
+                     "lines": lines, "huy": huy, "hoan": 0.0 if huy else _hv_refund(o), "src": "api"})
+    return recs
+
+
+def _hv_diagnose(orders, week_start, log=print):
+    """In bảng đối chiếu 1 tuần với Bảng phân tích Haravan (không in thông tin khách hàng)."""
+    from datetime import timedelta
+    try:
+        s = datetime.strptime(week_start.strip(), "%Y-%m-%d")
+    except Exception:
+        log(f"  ! HARAVAN_CHECK_WEEK sai định dạng (cần YYYY-MM-DD): {week_start}")
+        return
+    e = s + timedelta(days=6)
+    log(f"\n===== ĐỐI CHIẾU HARAVAN: tuần {s:%d/%m} - {e:%d/%m/%Y} =====")
+    src = defaultdict(int)
+    agg = defaultdict(lambda: defaultdict(float))
+    for o in orders:
+        t = _hv_vn_time(o.get("created_at"))
+        if not t or not (s.date() <= t.date() <= e.date()):
+            continue
+        src[f"{o.get('source_name')!s} | {o.get('source')!s}"] += 1
+        k = _hv_kenh(o)
+        a = agg[k]
+        huy = (o.get("cancelled_status") or "").lower() == "cancelled" or bool(o.get("cancelled_at"))
+        if huy:
+            a["don_huy"] += 1
+            continue
+        a["so_don"] += 1
+        a["total_price"] += float(o.get("total_price") or 0)
+        a["subtotal_price"] += float(o.get("subtotal_price") or 0)
+        a["hang_tru_giam"] += float(o.get("total_line_items_price") or 0) - float(o.get("total_discounts") or 0)
+        a["hoan_tra"] += _hv_refund(o)
+        a["net"] += _hv_revenue(o, "net")
+    log("  source_name | source  ->  số đơn:")
+    for k, v in sorted(src.items(), key=lambda x: -x[1]):
+        log(f"     {k}  ->  {v}")
+    for k, a in agg.items():
+        log(f"  [{k}] đơn hợp lệ {int(a['so_don'])} · đơn hủy {int(a['don_huy'])} · hoàn trả {a['hoan_tra']:,.0f}")
+        log(f"        total_price {a['total_price']:,.0f} · subtotal_price {a['subtotal_price']:,.0f} · "
+            f"tiền hàng-giảm giá {a['hang_tru_giam']:,.0f} · net (trừ hoàn) {a['net']:,.0f}")
+    log("===== (so với Bảng phân tích Haravan cùng tuần, cùng kênh) =====\n")
+
+
+def fetch_haravan_orders(log=print):
+    """Lấy đơn: Haravan API (nguồn số 1) -> Supabase hệ thống kho -> Apps Script cũ (dự phòng)."""
+    token = os.environ.get("HARAVAN_TOKEN", "").strip()
+    if token:
+        try:
+            days = int((os.environ.get("HARAVAN_DAYS") or "14").strip() or 14)
+            raw = _haravan_api_orders(token, days, log)
+            if os.environ.get("HARAVAN_CHECK_WEEK", "").strip():
+                _hv_diagnose(raw, os.environ["HARAVAN_CHECK_WEEK"], log)
+            HARAVAN_SOURCE_INFO["nguon"] = "Haravan API (trực tiếp)"
+            ts = [_hv_vn_time(o.get("created_at")) for o in raw]
+            ts = [t for t in ts if t]
+            if ts:   # giờ VN (máy chạy GitHub đặt TZ=Asia/Ho_Chi_Minh)
+                HARAVAN_SOURCE_INFO["last_ms"] = max(ts).timestamp() * 1000
+            HARAVAN_SOURCE_INFO["last_ngay"] = max(ts).strftime("%Y-%m-%d") if ts else ""
+            return _hv_to_recs(raw)
+        except Exception as e:
+            log(f"  ! Đọc Haravan API lỗi ({e}) — chuyển sang nguồn dự phòng")
+    else:
+        log("  (Chưa cài HARAVAN_TOKEN trong GitHub Secrets — dùng nguồn dự phòng)")
+    orders = None
+    try:
+        orders = _supabase_orders(log)
+        if orders is not None:
+            HARAVAN_SOURCE_INFO["nguon"] = "Supabase (hệ thống kho)"
+            log(f"  Supabase: {len(orders)} dòng đơn")
+    except Exception as e:
+        log(f"  ! Đọc Supabase lỗi ({e}) — thử nguồn cũ (Google Sheets)")
+        orders = None
+    if orders is None:
+        orders = _apps_script_orders()
+        HARAVAN_SOURCE_INFO["nguon"] = "Google Sheets cũ (hệ thống kho đã ngừng ghi từ 25/09)"
+    last = max((max(_ms_of(o.get("_ct")), _ms_of(o.get("_ts"))) for o in orders if o.get("ngay")), default=0.0)
+    if last:
+        HARAVAN_SOURCE_INFO["last_ms"] = last
+    HARAVAN_SOURCE_INFO["last_ngay"] = max((o.get("ngay") or "" for o in orders), default="")
+    return _group_orders(orders)
+
+
+def _apps_script_orders():
+    """Nguồn cũ: Apps Script action=load (Google Sheets) — hệ thống kho đã ngừng ghi từ 25/09/2026."""
     out = "/tmp/loho_haravan.json"
     last_err = ""
     for attempt in range(1, 4):   # thử tối đa 3 lần (Apps Script trả ~10MB, đôi khi chậm/timeout)
@@ -3741,7 +4197,11 @@ def fetch_haravan_orders():
     state = j.get("state")
     if isinstance(state, str):
         state = json.loads(state)
-    orders = state.get("orders", []) if isinstance(state, dict) else []
+    return state.get("orders", []) if isinstance(state, dict) else []
+
+
+def _group_orders(orders):
+    """Gộp dòng đơn theo mã đơn, bỏ đơn hủy toàn bộ -> list {ngay, kenh, tien, lines}."""
     by = defaultdict(list)
     for o in orders:
         mad = o.get("madon") or ""
@@ -3774,14 +4234,22 @@ def _haravan_channel_daily(recs, kenh_name, fee_rate):
             continue
         if not (y == HARAVAN_YEAR and 1 <= m <= 12 and m >= HARAVAN_START_MONTH):
             continue
-        tien = rc["tien"]
         d = daily[ng]
+        if rc.get("src") == "api":                      # nguồn Haravan API: có đơn hủy + tiền hoàn theo ngày
+            d["api"] = True
+            d["huy"] = d.get("huy", 0)
+            d["hoan"] = d.get("hoan", 0.0)
+            if rc.get("huy"):
+                d["huy"] += 1
+                continue
+            d["hoan"] += float(rc.get("hoan") or 0)
+        tien = rc["tien"]
         fee = tien * fee_rate
         d["revenue"] += tien
         d["orders"] += 1
         d["fees"] += fee
         d["net"] += (tien - fee)
-        prim = rc["lines"][0]
+        prim = rc["lines"][0] if rc["lines"] else {}
         pname = (prim.get("tenSan") or "").strip()
         canon = canonicalize_product_name(pname) if pname else "(không tên)"
         cat = classify_product(pname, prim.get("sku") or "")
@@ -3833,6 +4301,7 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
         recs = fetch_haravan_orders()
     except Exception as e:
         recs = None
+        HARAVAN_SOURCE_INFO["nguon"] = "bộ nhớ đệm (lần đọc đơn này bị lỗi)"
         log(f"  ! Haravan fetch LỖI ({e}) -> dùng CACHE cho T6+ (không rơi về Sheets)")
     if recs:
         log(f"  Haravan: {len(recs)} đơn hợp lệ (đã loại hủy)")
@@ -3865,12 +4334,22 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
                           "fees": float(cv.get("fees", 0)), "net": float(cv.get("net", 0)),
                           "products": dict(cv.get("products", {})), "product_revenue": dict(cv.get("product_revenue", {})),
                           "cats": {c: float(cv.get("cats", {}).get(c, 0)) for c in CATS5}}
+            if cv.get("api"):
+                merged[fd].update(api=True, huy=int(cv.get("huy", 0) or 0), hoan=float(cv.get("hoan", 0) or 0))
+            if cv.get("src"):
+                merged[fd]["src"] = cv["src"]
         # Ghi đè bằng dữ liệu MỚI từ Haravan (nếu fetch thành công) — ngày mới thắng cache
         hfresh = _haravan_channel_daily(recs, kenh_name, rate) if recs else {}
         for fd, dv in hfresh.items():
+            _old = merged.get(fd)
+            if (_old and _old.get("src") == "file" and not dv.get("api")
+                    and dv["orders"] < _old.get("orders", 0)):
+                continue        # ngày đã bù từ file sàn, nguồn kho cũ thiếu đơn hơn -> giữ số file
             merged[fd] = {"revenue": dv["revenue"], "orders": dv["orders"], "fees": dv["fees"], "net": dv["net"],
                           "products": dict(dv["products"]), "product_revenue": dict(dv["product_revenue"]),
                           "cats": {c: dv["cats"].get(c, 0) for c in CATS5}}
+            if dv.get("api"):
+                merged[fd].update(api=True, huy=int(dv.get("huy", 0) or 0), hoan=float(dv.get("hoan", 0) or 0))
         cache[pl] = merged          # cập nhật cache (sẽ lưu lại cuối hàm)
         hdaily = merged
         cutoff = _haravan_cutoff(hdaily)
@@ -3893,6 +4372,8 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
             dd[fd] = {"revenue": dv["revenue"], "orders": dv["orders"], "fees": dv["fees"], "net": dv["net"],
                       "products": dict(dv["products"]), "product_revenue": dict(dv["product_revenue"]),
                       "order_ids": set()}
+            if dv.get("api"):
+                dd[fd].update(api=True, huy=dv.get("huy", 0), hoan=dv.get("hoan", 0.0))
             dcat[fd] = {c: dv["cats"].get(c, 0) for c in ("san", "son", "congcu", "decor", "other")}
 
         # (2) Dựng lại monthly + categories cho tháng >= start từ daily đã merge (T1..T5 giữ nguyên)
@@ -3939,6 +4420,12 @@ def apply_haravan_override(platforms_data, daily_data, categories_data, daily_ca
         tag = ", ".join(f"{k}={int(mon[k]['revenue']):,}" for k in sorted(mon, key=lambda x: int(x[1:])) if int(k[1:]) >= HARAVAN_START_MONTH)
         log(f"  {pl}: Haravan tiếp quản từ {cutoff} (phí ~{rate*100:.1f}%) | {tag}")
     _save_haravan_cache(cache, log)
+    _days = [d for pl in HARAVAN_CHANNELS.values() for d in (cache.get(pl) or {})]
+    if _days:
+        HARAVAN_SOURCE_INFO["cache_last_ngay"] = max(_days)
+    _fd = [d for pl in HARAVAN_CHANNELS.values() for d, v in (cache.get(pl) or {}).items() if v.get("src") == "file"]
+    if _fd:
+        HARAVAN_SOURCE_INFO["file_last_ngay"] = max(_fd)
     return True
 
 
@@ -4051,6 +4538,431 @@ def main():
     file_size = os.path.getsize(output_path)
     print(f"\nDone! File size: {file_size:,} bytes")
     print(f"Updated: {(datetime.now(VN_TZ) if VN_TZ else datetime.now()).strftime('%d/%m/%Y %H:%M')}")
+
+
+
+
+# ===================== Ô TẢI FILE (JS chạy trên trình duyệt) =====================
+# Nguồn: upload_parser.js (đọc file) + upload_ui.js (nút bấm). Chèn nguyên văn vào trang.
+UPLOAD_PARSER_JS = r'''/* ===== LOHO UPLOAD PARSER — đọc file Excel/PDF ngay trên trình duyệt =====
+   Dùng global XLSX (SheetJS) và pdfjsLib (pdf.js).
+   Kết quả mỗi file: {file, kind, ch, s, e, period:{type:'m'|'w', key, end, label}, data, main}
+   hoặc {file, err} / {file, skip}.
+*/
+var LUP = (function () {
+  function vnumVN(v) {            // "1.862.926.352" / "432.735,51" / số
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return v;
+    var t = String(v).trim(); var neg = /^[-−]/.test(t);
+    t = t.split(",")[0].replace(/[^\d]/g, "");
+    if (!t) return null; var n = Number(t); return neg ? -n : n;
+  }
+  function vnumPlain(v) {         // "-25,328,547" / "₫876,710,277" (dấu phẩy = hàng nghìn)
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return v;
+    var t = String(v).trim(); var neg = /^[-−]/.test(t.replace("₫", "").trim());
+    t = t.replace(/[^\d]/g, "");
+    if (!t) return null; var n = Number(t); return neg ? -n : n;
+  }
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function ymd(y, m, d) { return y + "-" + pad(+m) + "-" + pad(+d); }
+  function lastDay(y, m) { return new Date(+y, +m, 0).getDate(); }
+  function classify(s, e) {
+    var y = +s.slice(0, 4), m = +s.slice(5, 7), d1 = +s.slice(8, 10), d2 = +e.slice(8, 10);
+    if (s.slice(0, 7) === e.slice(0, 7) && d1 === 1 && d2 === lastDay(y, m))
+      return { type: "m", key: "T" + m, label: "Tháng " + m + "/" + y };
+    var days = Math.round((Date.parse(e) - Date.parse(s)) / 86400000) + 1;
+    if (days === 7)
+      return { type: "w", key: s, end: e, label: (+s.slice(8, 10)) + "/" + (+s.slice(5, 7)) + " - " + (+e.slice(8, 10)) + "/" + (+e.slice(5, 7)) };
+    return null;
+  }
+  function rows(ws) { return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }); }
+  function findSheet(wb, pred) { for (var i = 0; i < wb.SheetNames.length; i++) if (pred(wb.SheetNames[i].trim())) return wb.SheetNames[i]; return null; }
+  function strOf(c) { return c === null || c === undefined ? "" : String(c); }
+
+  /* ---- Shopee "doanh số" (Phân tích bán hàng) ---- */
+  function shopeeDS(wb) {
+    var sn = findSheet(wb, function (n) { return n.indexOf("Đơn hàng đã đặt") === 0; });
+    if (!sn) return null;
+    var r = rows(wb.Sheets[sn]), row = r[1] || [];
+    var m = strOf(row[0]).match(/(\d{2})-(\d{2})-(\d{4})\s*-\s*(\d{2})-(\d{2})-(\d{4})/);
+    if (!m) return { err: "Không đọc được khoảng ngày trong file Shopee doanh số" };
+    var s = ymd(m[3], m[2], m[1]), e = ymd(m[6], m[5], m[4]);
+    var d = { tong_ds: vnumVN(row[1]), so_don: vnumVN(row[3]), don_huy: vnumVN(row[8]), ds_huy: vnumVN(row[9]) };
+    var sn2 = findSheet(wb, function (n) { return n.indexOf("Nguồn truy cập cho Đơn hàng") === 0; });
+    if (sn2) {
+      var rr = rows(wb.Sheets[sn2]);
+      for (var i = 0; i < rr.length; i++) {
+        var x = rr[i] || [];
+        if (strOf(x[1]).trim().indexOf("Đơn hàng đã đặt") === 0) {
+          d.nguon = { tong: vnumVN(x[2]), the_sp: vnumVN(x[3]), live: vnumVN(x[4]), video: vnumVN(x[5]), ttlk: vnumVN(x[6]), dv_hienthi: vnumVN(x[7]) };
+          break;
+        }
+      }
+    }
+    return { kind: "Shopee doanh số", ch: "shopee", s: s, e: e, data: d, main: "Doanh số " + fmtN(d.tong_ds) };
+  }
+
+  /* ---- TikTok "Key metrics" / "doanh số" ---- */
+  function tiktokKM(wb) {
+    var ws = wb.Sheets[wb.SheetNames[0]]; var r = rows(ws);
+    if (!r.length || strOf(r[0][0]).indexOf("Ngày phân tích") !== 0) return null;
+    var hdrIdx = -1;
+    for (var i = 0; i < r.length; i++) { var c = (r[i] || []).map(strOf); if (c.indexOf("GMV") >= 0 && c.indexOf("Đơn hàng") >= 0) { hdrIdx = i; break; } }
+    if (hdrIdx < 0) return { err: "Không thấy bảng tổng quan GMV (TikTok)" };
+    var hdr = r[hdrIdx].map(strOf), val = r[hdrIdx + 1] || [];
+    function g(name) { var k = hdr.indexOf(name); return k >= 0 ? vnumVN(val[k]) : null; }
+    var d = { gmv: g("GMV"), so_don: g("Đơn hàng"), hoan_tien: g("Hoàn tiền"), tong_dt: g("Tổng doanh thu"), so_mon: g("Số món bán ra") };
+    var lLk = g("GMV nhờ buổi LIVE của nhà sáng tạo"), lNb = g("GMV nhờ buổi LIVE của tài khoản kết nối"),
+        vLk = g("GMV đến từ video liên kết"), vNb = g("GMV nhờ video của tài khoản kết nối");
+    if (d.gmv !== null && lLk !== null && lNb !== null && vLk !== null && vNb !== null)
+      d.nguon = { tong: d.gmv, the_sp: d.gmv - lLk - lNb - vLk - vNb, live: lNb, video: vNb, ttlk: lLk + vLk,
+                  live_tong: lLk + lNb, video_tong: vLk + vNb, live_lk: lLk, video_lk: vLk };
+    var dates = [];
+    for (var j = 0; j < r.length; j++) {
+      var a = (r[j] || [])[0];
+      if (a instanceof Date) dates.push(ymd(a.getFullYear(), a.getMonth() + 1, a.getDate()));
+      else { var mm = strOf(a).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (mm) dates.push(ymd(mm[3], mm[2], mm[1])); }
+    }
+    if (!dates.length) return { err: "Không đọc được ngày trong file TikTok" };
+    dates.sort();
+    return { kind: "TikTok doanh số", ch: "tiktok", s: dates[0], e: dates[dates.length - 1], data: d, main: "GMV " + fmtN(d.gmv) };
+  }
+
+  /* ---- TikTok "Doanh thu - CP" (quyết toán) — sheet "Báo cáo", giá trị cột F ---- */
+  function tiktokCP(wb) {
+    if (wb.SheetNames.indexOf("Báo cáo") < 0 || wb.SheetNames.indexOf("Chi tiết đơn hàng") < 0) return null;
+    var r = rows(wb.Sheets["Báo cáo"]);
+    function labelOf(x) { var out = []; for (var k = 0; k < 5; k++) if (typeof x[k] === "string") out.push(x[k]); return out.join(" ").trim(); }
+    function valFor(label) {
+      var L = label.toLowerCase();
+      for (var i = 0; i < r.length; i++) {
+        var x = r[i] || [];
+        if (labelOf(x).toLowerCase().indexOf(L) >= 0) {
+          for (var k = 4; k < x.length; k++) {
+            var c = x[k]; if (c === null) continue;
+            if (typeof c === "number") return c;
+            var sc = String(c).trim(); if (sc === "VND" || sc === "UTC+7") continue;
+            var n = vnumVN(sc); if (n !== null) return n;
+          }
+        }
+      }
+      return null;
+    }
+    var ktg = null;
+    for (var i = 0; i < r.length; i++) { var x = r[i] || []; if (labelOf(x).indexOf("Khoảng thời gian") >= 0) { for (var k = 4; k < x.length; k++) if (x[k]) { ktg = String(x[k]); break; } break; } }
+    var m = (ktg || "").match(/(\d{4})\/(\d{2})\/(\d{2})\s*-\s*(\d{4})\/(\d{2})\/(\d{2})/);
+    if (!m) return { err: "Không đọc được khoảng thời gian (TikTok quyết toán)" };
+    var tongQT = valFor("Tổng số tiền quyết toán"), hoan = valFor("khoản hoàn tiền"), tongPhi = valFor("Tổng phí");
+    var ct = [];
+    function lvlOf(x) { for (var k = 0; k < 5; k++) if (typeof x[k] === "string" && x[k].trim() && isNaN(Number(x[k]))) return k; return -1; }
+    function numOf(x) { for (var k = 5; k < x.length; k++) { var c = x[k]; if (c === null) continue; if (typeof c === "number") return c; var n = vnumVN(c); if (n !== null) return n; } return null; }
+    var i0 = -1;
+    for (var q = 0; q < r.length; q++) { var xq = r[q] || []; var lq = lvlOf(xq); if (lq >= 0 && String(xq[lq]).trim() === "Tổng phí") { i0 = q; break; } }
+    if (i0 >= 0) {
+      var L0 = lvlOf(r[i0]);
+      for (var q2 = i0 + 1; q2 < r.length; q2++) {
+        var x2 = r[q2] || [], l2 = lvlOf(x2); if (l2 < 0) continue; if (l2 <= L0) break;
+        var v2 = numOf(x2); if (l2 === L0 + 1 && v2) ct.push({ ten: String(x2[l2]).trim(), gia_tri: -v2 });
+      }
+    }
+    var qcQT = valFor("GMV thanh toán cho Quảng cáo TikTok");
+    var d = { dt_qt: tongQT, tong_dt: valFor("Tổng doanh thu"), don_hoan: hoan ? Math.abs(hoan) : 0, phi_san: tongPhi ? Math.abs(tongPhi) : 0,
+              dieu_chinh: valFor("Điều chỉnh"), dt_thuc: tongQT, chi_tiet_phi: ct, qc_quyet_toan: qcQT ? Math.abs(qcQT) : 0 };
+    return { kind: "TikTok quyết toán", ch: "tiktok", s: ymd(m[1], m[2], m[3]), e: ymd(m[4], m[5], m[6]), data: d, main: "Phí sàn " + fmtN(d.phi_san) };
+  }
+
+  /* ---- Shopee quảng cáo: Báo cáo Dịch vụ Hiển thị (.csv) ---- */
+  function shopeeQC(text) {
+    if (text.indexOf("Dịch vụ Hiển thị") < 0) return null;
+    var m = text.match(/Khoảng thời gian,(\d{2})\/(\d{2})\/(\d{4}) - (\d{2})\/(\d{2})\/(\d{4})/);
+    if (!m) return { err: "Không đọc được khoảng thời gian (Shopee quảng cáo)" };
+    var ws = XLSX.read(text, { type: "string" }); var r = rows(ws.Sheets[ws.SheetNames[0]]);
+    var hi = -1; for (var i = 0; i < r.length; i++) if (strOf((r[i] || [])[0]).trim() === "Thứ tự") { hi = i; break; }
+    if (hi < 0) return { err: "Không thấy bảng chiến dịch (Shopee quảng cáo)" };
+    var h = r[hi].map(function (x) { return strOf(x).trim(); });
+    function sum(name) { var k = h.indexOf(name), t = 0; if (k < 0) return null; for (var j = hi + 1; j < r.length; j++) { var v = (r[j] || [])[k]; var n = typeof v === "number" ? v : parseFloat(strOf(v).replace(/,/g, "")); if (!isNaN(n)) t += n; } return t; }
+    var q = { chi_phi: sum("Chi phí"), doanh_so: sum("Doanh số"), doanh_so_tt: sum("Doanh số trực tiếp"), don: sum("Lượt chuyển đổi"),
+              sp_ban: sum("Sản phẩm đã bán"), click: sum("Số lượt click"), xem: sum("Số lượt xem"), nguon_file: "Dịch vụ Hiển thị" };
+    return { kind: "Shopee quảng cáo", ch: "shopee", onlyMonth: true, s: ymd(m[3], m[2], m[1]), e: ymd(m[6], m[5], m[4]), data: { qc: q }, main: "Chi phí QC " + fmtN(q.chi_phi) };
+  }
+
+  /* ---- TikTok quảng cáo: GMV Max "Campaign overview data" (.xlsx) ---- */
+  function tiktokQC(wb) {
+    var r = rows(wb.Sheets[wb.SheetNames[0]]); var h = (r[0] || []).map(function (x) { return strOf(x).trim(); });
+    if (h[0] !== "Theo ngày" || h.indexOf("Chi phí") < 0) return null;
+    var ic = h.indexOf("Chi phí"), io = -1, ir = -1;
+    h.forEach(function (x, k) { if (x.indexOf("Số lượng đơn hàng") === 0) io = k; if (x.indexOf("Doanh thu gộp") === 0) ir = k; });
+    var cp = 0, dn = 0, dt = 0, ds = [];
+    for (var i = 1; i < r.length; i++) {
+      var x = r[i] || [], a = x[0], d = null;
+      if (a instanceof Date) d = ymd(a.getFullYear(), a.getMonth() + 1, a.getDate());
+      else { var mm = strOf(a).match(/^(\d{4})-(\d{2})-(\d{2})/); if (mm) d = ymd(mm[1], mm[2], mm[3]); }
+      if (!d) continue; ds.push(d);
+      cp += vnumVN(x[ic]) || 0; if (io >= 0) dn += vnumVN(x[io]) || 0; if (ir >= 0) dt += vnumVN(x[ir]) || 0;
+    }
+    if (!ds.length) return { err: "Không đọc được ngày (TikTok quảng cáo)" };
+    ds.sort();
+    var q = { chi_phi: cp, doanh_thu: dt, don: dn, nguon_file: "GMV Max" };
+    return { kind: "TikTok quảng cáo", ch: "tiktok", onlyMonth: true, s: ds[0], e: ds[ds.length - 1], data: { qc: q }, main: "Chi phí QC " + fmtN(cp) };
+  }
+
+  /* ---- TikTok danh sách đơn (OrderSKUList) -> đơn hủy / đơn trả hàng cả tháng ---- */
+  function tiktokOD(wb) {
+    var r = rows(wb.Sheets[wb.SheetNames[0]]); var h = (r[0] || []).map(function (x) { return strOf(x).trim(); });
+    var iS = h.indexOf("Order Status"), iT = h.indexOf("Cancelation/Return Type"), iC = h.indexOf("Created Time");
+    if (iS < 0 || iC < 0) return null;
+    var seen = {}, huy = 0, hoan = 0, n = 0, ds = [];
+    for (var i = 2; i < r.length; i++) {
+      var x = r[i] || [], id = strOf(x[0]); if (!id || seen[id]) continue; seen[id] = 1; n++;
+      var mm = strOf(x[iC]).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if (mm) ds.push(ymd(mm[3], mm[2], mm[1]));
+      var st = strOf(x[iS]).trim(), ty = strOf(x[iT]).trim();
+      if (st === "Đã hủy") huy++; else if (ty === "Return/Refund") hoan++;
+    }
+    if (!ds.length) return { err: "Không đọc được ngày đặt (TikTok danh sách đơn)" };
+    ds.sort(); var s = ds[0], e = ds[ds.length - 1];
+    if (s.slice(0, 7) !== e.slice(0, 7) || (Date.parse(e) - Date.parse(s)) / 86400000 < 25)
+      return { skip: "File đơn TikTok không phải gần trọn 1 tháng — bỏ qua" };
+    var y = +s.slice(0, 4), mo = +s.slice(5, 7);
+    return { kind: "TikTok danh sách đơn", ch: "tiktok", s: ymd(y, mo, 1), e: ymd(y, mo, lastDay(y, mo)),
+             data: { don_huy: huy, sl_hoan: hoan, tong_don_file: n, od_ky: (+s.slice(8, 10)) + "/" + mo + "–" + (+e.slice(8, 10)) + "/" + mo },
+             main: "Đơn hủy " + fmtN(huy) + " / " + fmtN(n) + " đơn" };
+  }
+
+  /* ---- Shopee "Doanh thu - CP" (Báo cáo thu nhập, PDF) ---- */
+  function shopeeCP(text) {
+    if (text.indexOf("Báo cáo thu nhập") < 0 || text.indexOf("Tổng thanh toán đã chuyển") < 0) return null;
+    var m = text.match(/Báo cáo từ\s*(\d{4}-\d{2}-\d{2})\s*đến\s*(\d{4}-\d{2}-\d{2})/);
+    if (!m) return { err: "Không đọc được kỳ báo cáo (Shopee quyết toán PDF)" };
+    var cut = text.indexOf("Thông tin thanh toán"); var head = cut > 0 ? text.slice(0, cut) : text;
+    var lines = head.split("\n");
+    function grab(label) {
+      var L = label.toLowerCase();
+      for (var i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().indexOf(L) >= 0) {
+          var mm = lines[i].match(/[₫\-−]?\s?[\d.,]{2,}/g);
+          if (mm) return vnumPlain(mm[mm.length - 1]);
+        }
+      }
+      return null;
+    }
+    var giaSp = grab("Giá sản phẩm"), hoan = grab("Số tiền hoàn lại"), giam = grab("Mã ưu đãi do Người Bán chịu"),
+        vc = grab("Phí vận chuyển (không tính trợ giá)"), phiGd = grab("Phí giao dịch"),
+        f1 = grab("Phí cố định"), f2 = grab("Phí Dịch Vụ"), f3 = grab("Phí xử lý giao dịch"),
+        f4 = grab("Phí hoa hồng Tiếp thị liên kết"), f5 = grab("Phí dịch vụ PiShip"), daChuyen = grab("Tổng thanh toán đã chuyển");
+    var ct = [];
+    [["Phí cố định", f1], ["Phí Dịch Vụ", f2], ["Phí xử lý giao dịch", f3], ["Phí hoa hồng Tiếp thị liên kết", f4], ["Phí dịch vụ PiShip", f5], ["Phí vận chuyển ròng", vc]]
+      .forEach(function (p) { if (p[1]) ct.push({ ten: p[0], gia_tri: Math.abs(p[1]) }); });
+    var d = { gia_sp: giaSp, don_hoan: hoan ? Math.abs(hoan) : 0, giam_gia: giam ? Math.abs(giam) : 0,
+              phi_san: Math.abs(phiGd || 0) + Math.abs(vc || 0), dt_thuc: daChuyen, chi_tiet_phi: ct };
+    return { kind: "Shopee quyết toán", ch: "shopee", s: m[1], e: m[2], data: d, main: "Phí sàn " + fmtN(d.phi_san) };
+  }
+
+  /* ---- File mẫu "Báo cáo hàng tuần" (cùng cấu trúc tab Google Sheet) -> CSV giống Google xuất ---- */
+  function csvCell(v) { v = (v === null || v === undefined) ? "" : String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function dstr(v) {
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "number") { var p = XLSX.SSF.parse_date_code(v); return p ? ymd(p.y, p.m, p.d) : ""; }
+    var t = String(v).trim(), m;
+    if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return ymd(m[1], m[2], m[3]);
+    if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) return ymd(m[3], m[2], m[1]);
+    return t;
+  }
+  function weeklyTemplates(wb) {
+    var out = [];
+    wb.SheetNames.forEach(function (sn) {
+      var r = rows(wb.Sheets[sn]);
+      var labels = r.map(function (x) { return strOf((x || [])[0]).trim(); });
+      function idxOf(p) { for (var i = 0; i < labels.length; i++) if (labels[i].indexOf(p) === 0) return i; return -1; }
+      var iS = idxOf("Ngày bắt đầu tuần"), iE = idxOf("Ngày kết thúc tuần"), iL = idxOf("Tên tuần");
+      if (iS < 0 || iE < 0 || idxOf("①") < 0) return;
+      var start = dstr((r[iS] || [])[1]), end = dstr((r[iE] || [])[1]);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return;
+      var label = iL >= 0 ? strOf((r[iL] || [])[1]).trim() : "Tuần " + start;
+      var width = 6; r.forEach(function (x) { if (x && x.length > width) width = x.length; });
+      var lines = r.map(function (x, i) {
+        x = x || []; var lab = labels[i].toLowerCase();
+        var isRatio = lab.indexOf("tỷ lệ") >= 0 || lab.indexOf("tỉ lệ") >= 0;
+        var cells = [];
+        for (var k = 0; k < width; k++) {
+          var v = x[k];
+          if (k === 0 && (labels[i + 1] || "").indexOf("Tiêu đề đánh giá") === 0 && labels[i].indexOf("⑨") !== 0) v = "⑨ ĐÁNH GIÁ & KẾ HOẠCH TUẦN TỚI";
+          else if (k === 1 && (i === iS || i === iE)) v = dstr(v);
+          else if (typeof v === "number") {
+            if (isRatio && Math.abs(v) <= 1.5) v = (v * 100).toFixed(2).replace(".", ",") + "%";
+            else v = Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100).replace(".", ",");
+          }
+          cells.push(csvCell(v));
+        }
+        return cells.join(",");
+      });
+      out.push({ start: start, end: end, label: label, sheet: sn, csv: lines.join("\n") });
+    });
+    return out;
+  }
+
+  function fmtN(n) { return n === null || n === undefined ? "—" : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+
+  /* Ghép chữ trong PDF thành dòng theo toạ độ y */
+  function itemsToLines(items) {
+    var groups = [];
+    items.forEach(function (it) {
+      if (!it.str || !it.str.trim()) return;
+      var y = it.transform[5], g = null;
+      for (var i = 0; i < groups.length; i++) if (Math.abs(groups[i].y - y) <= 2.5) { g = groups[i]; break; }
+      if (!g) { g = { y: y, arr: [] }; groups.push(g); }
+      g.arr.push(it);
+    });
+    groups.sort(function (a, b) { return b.y - a.y; });
+    return groups.map(function (g) { return g.arr.sort(function (a, b) { return a.transform[4] - b.transform[4]; }).map(function (i) { return i.str; }).join(" "); }).join("\n");
+  }
+  async function pdfText(buf) {
+    var pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    var page = await pdf.getPage(1); var tc = await page.getTextContent();
+    return itemsToLines(tc.items);
+  }
+
+  function finish(file, res) {
+    if (!res) return { file: file, err: "Không nhận ra loại file này" };
+    if (res.err || res.skip) { res.file = file; return res; }
+    var p = classify(res.s, res.e);
+    if (!p) return { file: file, err: "Kỳ " + res.s + " → " + res.e + " không phải trọn 1 tuần (7 ngày) hoặc trọn 1 tháng" };
+    if (p.type === "w" && res.onlyMonth)
+      return { file: file, err: "File quảng cáo theo tuần: chỉ nhận file trọn 1 tháng (01 → cuối tháng)." };
+    if (p.type === "w" && res.kind.indexOf("quyết toán") >= 0)
+      return { file: file, err: "File quyết toán theo tuần: số quyết toán tuần vẫn nhập ở Sheet Báo cáo tuần. Hãy tải file quyết toán cả tháng." };
+    res.file = file; res.period = p; return res;
+  }
+
+  /* Đọc 1 file (ArrayBuffer) */
+  async function parseFile(name, buf) {
+    try {
+      if (/\.pdf$/i.test(name)) return finish(name, shopeeCP(await pdfText(buf)));
+      if (/\.csv$/i.test(name)) return finish(name, shopeeQC(new TextDecoder("utf-8").decode(buf).replace(/^\uFEFF/, "")));
+      var wb = XLSX.read(buf, { type: "array" });
+      if (wb.SheetNames.indexOf("OrderSKUList") >= 0) return finish(name, tiktokOD(wb));
+      if (wb.SheetNames.indexOf("orders") >= 0)
+        return { file: name, skip: "File danh sách đơn Shopee — không cần tải (đơn hủy lấy từ file doanh số)" };
+      var wk = weeklyTemplates(wb);
+      if (wk.length) return { file: name, kind: "Báo cáo tuần (file mẫu)", ch: "", reports: wk,
+                              main: "Toàn bộ trang báo cáo tuần (" + wk.length + " tuần)" };
+      return finish(name, tiktokCP(wb) || shopeeDS(wb) || tiktokKM(wb) || tiktokQC(wb));
+    } catch (e) { return { file: name, err: "Lỗi đọc file: " + (e && e.message ? e.message : e) }; }
+  }
+
+  /* Biến kết quả thành các mục lưu: m:Tx:kênh / w:yyyy-mm-dd:kênh */
+  function toItems(results) {
+    var out = [];
+    results.forEach(function (r) {
+      if (r.reports) {
+        r.reports.forEach(function (w) { out.push({ key: "r:" + w.start, data: { csv: w.csv, label: w.label, end: w.end }, file: r.file }); });
+        return;
+      }
+      if (!r.period) return;
+      if (r.period.type === "m") {
+        out.push({ key: "m:" + r.period.key + ":" + r.ch, data: r.data, file: r.file });
+      } else {
+        var data;
+        if (r.ch === "shopee") data = Object.assign({}, r.data.nguon || {});
+        else data = Object.assign({ gmv: r.data.gmv, so_don: r.data.so_don, hoan_tien: r.data.hoan_tien, tong_dt: r.data.tong_dt }, r.data.nguon || {});
+        data.end = r.period.end; data.label = r.period.label;
+        out.push({ key: "w:" + r.period.key + ":" + r.ch, data: data, file: r.file });
+      }
+    });
+    return out;
+  }
+  return { parseFile: parseFile, toItems: toItems, classify: classify, fmtN: fmtN, _itemsToLines: itemsToLines };
+})();
+if (typeof module !== "undefined") module.exports = LUP;
+'''
+
+UPLOAD_UI_JS = r'''/* ===== Ô TẢI FILE: đọc -> xem trước -> gửi Google Sheet (Apps Script) ===== */
+(function () {
+  function $(id) { return document.getElementById(id); }
+  if (!$("upl-read")) return;
+  var URL_UP = (typeof UPLOAD_URL !== "undefined" && UPLOAD_URL) ? UPLOAD_URL : "";
+  var parsed = [];
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function status(msg, cls) { var el = $("upl-status"); el.className = "upl-status " + (cls || ""); el.innerHTML = msg || ""; }
+  function loadScript(src) {
+    return new Promise(function (res, rej) {
+      if (document.querySelector('script[src="' + src + '"]')) return res();
+      var s = document.createElement("script"); s.src = src;
+      s.onload = function () { res(); };
+      s.onerror = function () { rej(new Error("Không tải được thư viện đọc file — kiểm tra kết nối mạng")); };
+      document.head.appendChild(s);
+    });
+  }
+  async function ensureLibs(needPdf) {
+    if (typeof XLSX === "undefined") await loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+    if (needPdf && typeof pdfjsLib === "undefined") {
+      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+  }
+  function periodText(r) {
+    if (r.reports) return r.reports.map(function (w) { return esc(w.label); }).join("<br>");
+    if (!r.period) return "";
+    return r.period.type === "m" ? esc(r.period.label) : "Tuần " + esc(r.period.label);
+  }
+  function renderTable() {
+    var h = '<table style="margin-top:10px"><thead><tr><th>File</th><th>Loại</th><th>Kỳ</th><th class="right">Số chính</th><th>Trạng thái</th></tr></thead><tbody>';
+    parsed.forEach(function (r) {
+      var st = r.err ? '<span class="badge down">' + esc(r.err) + '</span>'
+             : r.skip ? '<span class="badge neutral">' + esc(r.skip) + '</span>'
+             : '<span class="badge up">Đọc được</span>';
+      var ch = r.ch ? " · " + (r.ch === "shopee" ? "Shopee" : "TikTok") : "";
+      h += "<tr><td>" + esc(r.file) + "</td><td>" + esc(r.kind || "") + ch + "</td><td>" + periodText(r) +
+           '</td><td class="right">' + esc(r.main || "") + "</td><td>" + st + "</td></tr>";
+    });
+    $("upl-result").innerHTML = h + "</tbody></table>";
+  }
+  async function readFiles() {
+    var files = Array.prototype.slice.call($("upl-files").files || []);
+    if (!files.length) { status("Chưa chọn file nào — bấm nút chọn tệp trước.", "warn"); return; }
+    $("upl-send").disabled = true; parsed = []; $("upl-result").innerHTML = "";
+    status("⏳ Đang đọc " + files.length + " file…");
+    try { await ensureLibs(files.some(function (f) { return /\.pdf$/i.test(f.name); })); }
+    catch (e) { status("❌ " + esc(e.message), "err"); return; }
+    for (var i = 0; i < files.length; i++) {
+      status("⏳ Đang đọc file " + (i + 1) + "/" + files.length + ": " + esc(files[i].name));
+      parsed.push(await LUP.parseFile(files[i].name, await files[i].arrayBuffer()));
+    }
+    renderTable();
+    var items = LUP.toItems(parsed);
+    if (items.length) {
+      $("upl-send").disabled = false;
+      status("Đọc xong: <b>" + items.length + "</b> mục số liệu sẵn sàng. Kiểm tra bảng bên dưới rồi bấm <b>2. Gửi cập nhật</b>." +
+             (URL_UP ? "" : " <br>⚠️ Ô tải file chưa được cài nơi lưu (Apps Script) nên chưa gửi được."), URL_UP ? "ok" : "warn");
+    } else status("Không đọc được số liệu nào từ các file đã chọn — xem cột Trạng thái.", "warn");
+  }
+  async function send() {
+    if (!URL_UP) { status("❌ Chưa cài đặt nơi lưu (Apps Script). Xem file HUONG_DAN_O_TAI_FILE.md.", "err"); return; }
+    var pass = $("upl-pass").value.trim();
+    if (!pass) { status("Nhập mật khẩu cập nhật.", "warn"); $("upl-pass").focus(); return; }
+    var items = LUP.toItems(parsed); if (!items.length) return;
+    $("upl-send").disabled = true; status("⏳ Đang gửi " + items.length + " mục…");
+    try {
+      var res = await fetch(URL_UP, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+                                      body: JSON.stringify({ pass: pass, items: items }) });
+      var j = await res.json();
+      if (!j.ok) { status("❌ " + esc(j.error || "Lỗi không rõ"), "err"); $("upl-send").disabled = false; return; }
+      var msg = "✅ Đã lưu <b>" + j.saved + "</b> mục vào Google Sheet. ";
+      msg += (j.triggered === "ok")
+        ? "Dashboard đang tự cập nhật — khoảng <b>2–3 phút</b> nữa bấm <b>F5</b> để xem số mới."
+        : "Dashboard sẽ có số mới ở lần tự cập nhật kế tiếp (9h30 / 15h30). <span style='color:var(--text-soft)'>(" + esc(j.triggered) + ")</span>";
+      status(msg, "ok"); $("upl-files").value = ""; parsed = [];
+    } catch (e) {
+      status("❌ Không gửi được: " + esc(e.message) + ". Kiểm tra mạng hoặc địa chỉ Apps Script.", "err");
+      $("upl-send").disabled = false;
+    }
+  }
+  $("upl-read").addEventListener("click", readFiles);
+  $("upl-send").addEventListener("click", send);
+  $("upl-files").addEventListener("change", function () { $("upl-send").disabled = true; $("upl-result").innerHTML = ""; status(""); });
+  if (!URL_UP) status("⚠️ Chưa cài nơi lưu (Apps Script): vẫn <b>đọc thử</b> file được, nhưng chưa <b>gửi cập nhật</b> được.", "warn");
+})();
+'''
 
 
 if __name__ == "__main__":

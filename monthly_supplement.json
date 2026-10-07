@@ -1,6 +1,6 @@
 {
  "nam": 2026,
- "cap_nhat": "28/09/2026 17:20",
+ "cap_nhat": "01/10/2026 09:12",
  "thang": {
   "T1": {
    "shopee": {
@@ -45,7 +45,9 @@
      "video": null,
      "ttlk": null,
      "quang_cao": null
-    }
+    },
+    "sl_hoan": 80.0,
+    "ds_hoan": 42533699.0
    },
    "tiktok": {
     "dt_qt": 272783342.0,
@@ -65,17 +67,49 @@
      },
      {
       "ten": "Phí vận chuyển của người bán",
-      "gia_tri": 3279708.0
+      "gia_tri": -3279708.0
      },
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 19253338.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 247799.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 8888107.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 3001050.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 2077570.0
      }
     ],
     "gmv": 553187409.0,
     "so_don": 1613.0,
     "hoan_tien": 14525448.0,
-    "so_mon": 5031.0
+    "so_mon": 5031.0,
+    "nguon": {
+     "tong": 553187409.0,
+     "the_sp": 249164814.0,
+     "live": 32510677.0,
+     "video": 867732.0,
+     "ttlk": 270644186.0,
+     "live_tong": 32510677.0,
+     "video_tong": 271511918.0,
+     "live_lk": 0.0,
+     "video_lk": 270644186.0
+    },
+    "qc_quyet_toan": 3300000.0,
+    "don_huy": 376,
+    "sl_hoan": 12,
+    "tong_don_file": 1628,
+    "od_ky": "01/01–31/01"
    }
   },
   "T2": {
@@ -117,7 +151,9 @@
      "video": null,
      "ttlk": null,
      "quang_cao": null
-    }
+    },
+    "sl_hoan": 53.0,
+    "ds_hoan": 22561200.0
    },
    "tiktok": {
     "dt_qt": 200332942.0,
@@ -137,17 +173,49 @@
      },
      {
       "ten": "Phí vận chuyển của người bán",
-      "gia_tri": 610507.0
+      "gia_tri": -610507.0
      },
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 11979313.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 843824.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 6638740.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 2498310.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 1825171.0
      }
     ],
     "gmv": 522252055.0,
     "so_don": 1711.0,
     "hoan_tien": 24246672.0,
-    "so_mon": 4952.0
+    "so_mon": 4952.0,
+    "nguon": {
+     "tong": 522252055.0,
+     "the_sp": 246022734.0,
+     "live": 76725.0,
+     "video": 4271025.0,
+     "ttlk": 271881571.0,
+     "live_tong": 5166086.0,
+     "video_tong": 271063235.0,
+     "live_lk": 5089361.0,
+     "video_lk": 266792210.0
+    },
+    "qc_quyet_toan": 6600000.0,
+    "don_huy": 647,
+    "sl_hoan": 17,
+    "tong_don_file": 1731,
+    "od_ky": "01/02–28/02"
    }
   },
   "T3": {
@@ -193,7 +261,9 @@
      "video": 75454887.0,
      "ttlk": 311333720.0,
      "quang_cao": 905919436.0
-    }
+    },
+    "sl_hoan": 66.0,
+    "ds_hoan": 32286929.0
    },
    "tiktok": {
     "dt_qt": 332445433.0,
@@ -218,12 +288,44 @@
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 25244401.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 830368.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 12023095.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 3785940.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 3536583.0
      }
     ],
     "gmv": 654008255.0,
     "so_don": 1794.0,
     "hoan_tien": 22118160.0,
-    "so_mon": 4836.0
+    "so_mon": 4836.0,
+    "nguon": {
+     "tong": 654008255.0,
+     "the_sp": 265963897.0,
+     "live": 0.0,
+     "video": 12275878.0,
+     "ttlk": 375768480.0,
+     "live_tong": 13345432.0,
+     "video_tong": 374698926.0,
+     "live_lk": 13345432.0,
+     "video_lk": 362423048.0
+    },
+    "qc_quyet_toan": 34650000.0,
+    "don_huy": 448,
+    "sl_hoan": 27,
+    "tong_don_file": 1809,
+    "od_ky": "01/03–31/03"
    }
   },
   "T4": {
@@ -269,7 +371,9 @@
      "video": 55322450.0,
      "ttlk": 307121382.0,
      "quang_cao": 760263640.0
-    }
+    },
+    "sl_hoan": 66.0,
+    "ds_hoan": 25938670.0
    },
    "tiktok": {
     "dt_qt": 327331849.0,
@@ -289,17 +393,49 @@
      },
      {
       "ten": "Phí vận chuyển của người bán",
-      "gia_tri": 2665099.0
+      "gia_tri": -2665099.0
      },
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 21634270.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 5950.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 11827484.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 4383585.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 4657179.0
      }
     ],
     "gmv": 615844695.0,
     "so_don": 2171.0,
     "hoan_tien": 16698979.0,
-    "so_mon": 5474.0
+    "so_mon": 5474.0,
+    "nguon": {
+     "tong": 615844695.0,
+     "the_sp": 220816452.0,
+     "live": 27972950.0,
+     "video": 22183089.0,
+     "ttlk": 344872204.0,
+     "live_tong": 63768313.0,
+     "video_tong": 331259930.0,
+     "live_lk": 35795363.0,
+     "video_lk": 309076841.0
+    },
+    "qc_quyet_toan": 32609613.0,
+    "don_huy": 489,
+    "sl_hoan": 39,
+    "tong_don_file": 2193,
+    "od_ky": "01/04–30/04"
    }
   },
   "T5": {
@@ -345,7 +481,9 @@
      "video": 92279930.0,
      "ttlk": 224084231.0,
      "quang_cao": 680975289.0
-    }
+    },
+    "sl_hoan": 79.0,
+    "ds_hoan": 37670640.0
    },
    "tiktok": {
     "dt_qt": 341364770.0,
@@ -370,12 +508,44 @@
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 20053325.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 248731.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 16074181.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 6043140.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 4318043.0
      }
     ],
     "gmv": 689696535.0,
     "so_don": 3056.0,
     "hoan_tien": 22370720.0,
-    "so_mon": 8064.0
+    "so_mon": 8064.0,
+    "nguon": {
+     "tong": 689696535.0,
+     "the_sp": 197131723.0,
+     "live": 52083179.0,
+     "video": 46133513.0,
+     "ttlk": 394348120.0,
+     "live_tong": 64302174.0,
+     "video_tong": 428262638.0,
+     "live_lk": 12218995.0,
+     "video_lk": 382129125.0
+    },
+    "qc_quyet_toan": 59672678.0,
+    "don_huy": 623,
+    "sl_hoan": 45,
+    "tong_don_file": 3090,
+    "od_ky": "01/05–31/05"
    }
   },
   "T6": {
@@ -417,7 +587,9 @@
      "video": 157940933.0,
      "ttlk": 176072819.0,
      "quang_cao": 626709224.0
-    }
+    },
+    "sl_hoan": 50.0,
+    "ds_hoan": 18929354.0
    },
    "tiktok": {
     "dt_qt": 337466910.0,
@@ -442,12 +614,44 @@
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 17325270.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 1072969.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 16629332.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 5571180.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 4928076.0
      }
     ],
     "gmv": 595296326.0,
     "so_don": 2530.0,
     "hoan_tien": 42106158.0,
-    "so_mon": 6128.0
+    "so_mon": 6128.0,
+    "nguon": {
+     "tong": 595296326.0,
+     "the_sp": 180676076.0,
+     "live": 79916529.0,
+     "video": 53438313.0,
+     "ttlk": 281265408.0,
+     "live_tong": 83171587.0,
+     "video_tong": 331448663.0,
+     "live_lk": 3255058.0,
+     "video_lk": 278010350.0
+    },
+    "qc_quyet_toan": 34024256.0,
+    "don_huy": 541,
+    "sl_hoan": 61,
+    "tong_don_file": 2549,
+    "od_ky": "01/06–30/06"
    }
   },
   "T7": {
@@ -493,7 +697,9 @@
      "video": 171250562.0,
      "ttlk": 173587502.0,
      "quang_cao": 765475869.0
-    }
+    },
+    "sl_hoan": 98.0,
+    "ds_hoan": 33032989.0
    },
    "tiktok": {
     "dt_qt": 442261980.0,
@@ -518,12 +724,44 @@
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 25164931.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 1041109.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 26582194.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 6794685.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 5103574.0
      }
     ],
     "gmv": 895172982.0,
     "so_don": 3409.0,
     "hoan_tien": 43838945.0,
-    "so_mon": 8523.0
+    "so_mon": 8523.0,
+    "nguon": {
+     "tong": 895172982.0,
+     "the_sp": 237052829.0,
+     "live": 171240525.0,
+     "video": 96979345.0,
+     "ttlk": 389900283.0,
+     "live_tong": 181927018.0,
+     "video_tong": 476193135.0,
+     "live_lk": 10686493.0,
+     "video_lk": 379213790.0
+    },
+    "qc_quyet_toan": 44635288.0,
+    "don_huy": 715,
+    "sl_hoan": 75,
+    "tong_don_file": 3453,
+    "od_ky": "01/07–31/07"
    }
   },
   "T8": {
@@ -569,7 +807,9 @@
      "video": 159029633.0,
      "ttlk": 245450512.0,
      "quang_cao": 913600822.0
-    }
+    },
+    "sl_hoan": 91.0,
+    "ds_hoan": 37219390.0
    },
    "tiktok": {
     "dt_qt": 482403527.0,
@@ -594,12 +834,171 @@
      {
       "ten": "Hoa hồng liên kết",
       "gia_tri": 22189438.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 30509104.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 6751080.0
+     },
+     {
+      "ten": "Phí dịch vụ SFR",
+      "gia_tri": 5581833.0
      }
     ],
     "gmv": 959375274.0,
     "so_don": 3456.0,
     "hoan_tien": 50660551.0,
-    "so_mon": 8324.0
+    "so_mon": 8324.0,
+    "nguon": {
+     "tong": 959375274.0,
+     "the_sp": 261831050.0,
+     "live": 290984423.0,
+     "video": 109619683.0,
+     "ttlk": 296940118.0,
+     "live_tong": 300425229.0,
+     "video_tong": 397118995.0,
+     "live_lk": 9440806.0,
+     "video_lk": 287499312.0
+    },
+    "qc_quyet_toan": 44986539.0,
+    "don_huy": 725,
+    "sl_hoan": 65,
+    "tong_don_file": 3371,
+    "od_ky": "02/08–31/08"
+   }
+  },
+  "T9": {
+   "tiktok": {
+    "don_huy": 697,
+    "sl_hoan": 40,
+    "tong_don_file": 3105,
+    "od_ky": "01/09–30/09",
+    "gmv": 910549529.0,
+    "so_don": 3065.0,
+    "hoan_tien": 44753420.0,
+    "tong_dt": 1040186163.0,
+    "so_mon": 7730.0,
+    "nguon": {
+     "tong": 910549529.0,
+     "the_sp": 252995798.0,
+     "live": 248837432.0,
+     "video": 106138813.0,
+     "ttlk": 302577486.0,
+     "live_tong": 252611808.0,
+     "video_tong": 404941923.0,
+     "live_lk": 3774376.0,
+     "video_lk": 298803110.0
+    },
+    "dt_qt": 526901650.0,
+    "don_hoan": 348028135.0,
+    "phi_san": 168103621.0,
+    "dieu_chinh": 36821278.0,
+    "dt_thuc": 526901650.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí giao dịch",
+      "gia_tri": 20503446.0
+     },
+     {
+      "ten": "Phí hoa hồng của TikTok Shop",
+      "gia_tri": 84635251.0
+     },
+     {
+      "ten": "Phí vận chuyển của người bán",
+      "gia_tri": 3008208.0
+     },
+     {
+      "ten": "Hoa hồng liên kết",
+      "gia_tri": 21216145.0
+     },
+     {
+      "ten": "Hoa hồng liên kết Quảng cáo cửa hàng",
+      "gia_tri": 200787.0
+     },
+     {
+      "ten": "Phí dịch vụ Voucher Xtra",
+      "gia_tri": 28137035.0
+     },
+     {
+      "ten": "Phí xử lý đơn hàng",
+      "gia_tri": 6068790.0
+     },
+     {
+      "ten": "SFR service fee",
+      "gia_tri": 4204662.0
+     },
+     {
+      "ten": "Voucher GMV Max",
+      "gia_tri": 129297.0
+     }
+    ],
+    "qc_quyet_toan": 51763456.0,
+    "qc": {
+     "chi_phi": 46943356.0,
+     "doanh_thu": 252518081.0,
+     "don": 1819.0,
+     "nguon_file": "GMV Max"
+    }
+   },
+   "shopee": {
+    "tong_ds": 1770272236.0,
+    "so_don": 4161.0,
+    "don_huy": 939.0,
+    "ds_huy": 528049620.0,
+    "sl_hoan": 76.0,
+    "ds_hoan": 32028313.0,
+    "nguon": {
+     "the_sp": 1381078038.0,
+     "live": 0.0,
+     "video": 168244198.0,
+     "ttlk": 220950000.0,
+     "quang_cao": 1035667262.0
+    },
+    "qc": {
+     "chi_phi": 82432248.0,
+     "doanh_so": 1007914075.0,
+     "doanh_so_tt": 472719368.0,
+     "don": 3756.0,
+     "sp_ban": 6619.0,
+     "click": 23612.0,
+     "xem": 633121.0,
+     "so_chien_dich": 9,
+     "nguon_file": "Dịch vụ Hiển thị"
+    },
+    "gia_sp": 1246861050.0,
+    "don_hoan": 21726096.0,
+    "giam_gia": 32833932.0,
+    "phi_san": 381044940.0,
+    "dt_thuc": 811288772.0,
+    "chi_tiet_phi": [
+     {
+      "ten": "Phí cố định",
+      "gia_tri": 204810824.0
+     },
+     {
+      "ten": "Phí Dịch Vụ",
+      "gia_tri": 74868127.0
+     },
+     {
+      "ten": "Phí xử lý giao dịch",
+      "gia_tri": 72518753.0
+     },
+     {
+      "ten": "Phí hoa hồng Tiếp thị liên kết",
+      "gia_tri": 20222919.0
+     },
+     {
+      "ten": "Phí dịch vụ PiShip",
+      "gia_tri": 8542800.0
+     },
+     {
+      "ten": "Phí vận chuyển ròng",
+      "gia_tri": 81517.0
+     }
+    ]
    }
   }
  }
